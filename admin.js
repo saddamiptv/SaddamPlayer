@@ -2,7 +2,10 @@
  * SADDAM IPTV - Admin Management Console Logic
  */
 
-const API_BASE = window.SADDAM_API_BASE || '';
+const API_BASE = window.SADDAM_API_BASE || 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? '' 
+    : 'https://saddamplayer.onrender.com');
 let adminToken = localStorage.getItem('saddam_admin_token') || null;
 
 document.addEventListener('DOMContentLoaded', () => {

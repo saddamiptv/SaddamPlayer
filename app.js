@@ -5,7 +5,10 @@
  */
 
 // Configuration & API Base
-const API_BASE = window.SADDAM_API_BASE || '';
+const API_BASE = window.SADDAM_API_BASE || 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? '' 
+    : 'https://saddamplayer.onrender.com');
 
 // Application State
 const state = {
@@ -254,9 +257,15 @@ async function handlePairing(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mac, pin })
     });
-    const data = await res.json();
+    
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseError) {
+      data = null;
+    }
 
-    if (res.ok && data.success) {
+    if (res.ok && data && data.success) {
       state.token = data.token;
       state.device = data.device;
       localStorage.setItem('saddam_session_token', data.token);
@@ -266,10 +275,18 @@ async function handlePairing(e) {
       await loadSources();
       await loadSyncPreview();
     } else {
-      showAlert(DOM.pairingAlert, data.error || 'تعذر التحقق من الرموز. راجع القيم في تطبيق SADDAM IPTV وحاول مجددًا.', 'danger');
+      const errorMsg = (data && data.error) 
+        ? data.error 
+        : `تعذر الاتصال بالخادم (رمز الخطأ: ${res.status}).`;
+      showAlert(DOM.pairingAlert, errorMsg, 'danger');
     }
   } catch (err) {
-    showAlert(DOM.pairingAlert, 'حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة لاحقًا.', 'danger');
+    console.error('Pairing fetch error:', err);
+    if (window.location.protocol === 'file:') {
+      showAlert(DOM.pairingAlert, 'تنبيه: لا يمكن الاتصال بالخادم عند فتح الصفحة كملف محلي (file://). يرجى رفع مجلد Publish إلى GitHub Pages أو تشغيل خادم محلي.', 'danger');
+    } else {
+      showAlert(DOM.pairingAlert, 'حدث خطأ أثناء الاتصال بالخادم. يرجى التأكد من تشغيل الخادم والاتصال بالإنترنت.', 'danger');
+    }
   } finally {
     setButtonLoading(DOM.btnPair, false, 'ربط الجهاز والمتابعة <i class="fa-solid fa-arrow-left"></i>');
   }
