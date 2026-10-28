@@ -285,7 +285,7 @@ async function handlePairing(e) {
     if (window.location.protocol === 'file:') {
       showAlert(DOM.pairingAlert, 'تنبيه: لا يمكن الاتصال بالخادم عند فتح الصفحة كملف محلي (file://). يرجى رفع مجلد Publish إلى GitHub Pages أو تشغيل خادم محلي.', 'danger');
     } else {
-      showAlert(DOM.pairingAlert, 'حدث خطأ أثناء الاتصال بالخادم. يرجى التأكد من تشغيل الخادم والاتصال بالإنترنت.', 'danger');
+      showAlert(DOM.pairingAlert, 'حدث خطأ أثناء الاتصال بالخادم. إذا كان هذا أول طلب، فقد يستغرق خادم Render نحو 30 ثانية للاستيقاظ من وضع السكون. يرجى الانتظار قليلًا وإعادة المحاولة.', 'danger');
     }
   } finally {
     setButtonLoading(DOM.btnPair, false, 'ربط الجهاز والمتابعة <i class="fa-solid fa-arrow-left"></i>');

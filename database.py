@@ -148,12 +148,16 @@ def seed_initial_data():
         cursor = conn.cursor()
 
         # Admin user
+        from security import hash_pin
+        cursor.execute("SELECT id FROM admin_users WHERE username = 'Saddam2026'")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                           ('Saddam2026', hash_pin("Saddam@1991"), now))
+
         cursor.execute("SELECT id FROM admin_users WHERE username = 'admin'")
         if not cursor.fetchone():
-            from security import hash_pin  # reuse hash function
-            admin_pwd_hash = hash_pin("SaddamAdmin2026!")
             cursor.execute("INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                           ('admin', admin_pwd_hash, now))
+                           ('admin', hash_pin("SaddamAdmin2026!"), now))
 
         # Sample Device: MAC AA:BB:CC:11:22:33, PIN 123456
         demo_mac = "AA:BB:CC:11:22:33"
@@ -228,7 +232,12 @@ def create_or_rotate_pin(device_id: int, expiry_minutes: int = 60) -> str:
     """Creates a new 6-digit PIN for device pairing (used by Android app or admin)."""
     from security import generate_device_pin
     pin = generate_device_pin()
-    pin_h = hash_pin(pin)
+    return set_device_pin(device_id, pin, expiry_minutes)
+
+
+def set_device_pin(device_id: int, pin: str, expiry_minutes: int = 1440) -> str:
+    """Sets or updates the pairing PIN for a device."""
+    pin_h = hash_pin(str(pin).strip())
     now = int(time.time())
     expires_at = now + (expiry_minutes * 60)
 
@@ -242,7 +251,7 @@ def create_or_rotate_pin(device_id: int, expiry_minutes: int = 60) -> str:
         """, (device_id, pin_h, expires_at, now))
         conn.commit()
 
-    return pin
+    return str(pin).strip()
 
 
 def verify_device_credentials(mac: str, pin: str) -> Optional[Dict[str, Any]]:

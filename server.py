@@ -39,6 +39,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self.send_header("Access-Control-Max-Age", "86400")
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -169,14 +170,21 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 cursor.execute("SELECT id, status, sync_version FROM devices WHERE device_code = ?", (clean_mac,))
                 dev = cursor.fetchone()
                 if not dev:
-                    return self.send_json(404, {"paired": False, "status": "not_registered"})
+                    # Return 200 with paired=False so Android app displays clean state without HTTP 404 error
+                    return self.send_json(200, {
+                        "paired": False,
+                        "device_status": "not_registered",
+                        "sync_version": 1,
+                        "token": None
+                    })
                 # check if there's any active session
-                cursor.execute("SELECT id FROM device_sessions WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ?", (dev["id"], int(time.time())))
-                has_active_sess = cursor.fetchone() is not None
+                cursor.execute("SELECT token FROM device_sessions WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1", (dev["id"], int(time.time())))
+                active_sess = cursor.fetchone()
                 return self.send_json(200, {
-                    "paired": has_active_sess,
+                    "paired": active_sess is not None,
                     "device_status": dev["status"],
-                    "sync_version": dev["sync_version"]
+                    "sync_version": dev["sync_version"],
+                    "token": active_sess["token"] if active_sess else None
                 })
 
         if path == "/api/v1/devices/sources":
@@ -378,14 +386,18 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(400, {"error": "رمز الجهاز (MAC) مطلوب"})
             label = body.get("label", "Android TV Device")
             platform = body.get("platform", "Android")
-            app_version = body.get("app_version", "1.0.0")
+            app_version = body.get("app_version", "1.3.0")
+            client_pin = body.get("pin")
             dev = db.register_or_get_device(mac, label, platform, app_version)
-            pin = db.create_or_rotate_pin(dev["id"])
+            if client_pin and len(str(client_pin).strip()) == 6 and str(client_pin).strip().isdigit():
+                pin = db.set_device_pin(dev["id"], str(client_pin).strip(), expiry_minutes=1440)
+            else:
+                pin = db.create_or_rotate_pin(dev["id"])
             return self.send_json(201, {
                 "device_id": dev["id"],
                 "device_code": dev["device_code"],
                 "pairing_pin": pin,
-                "pin_expires_minutes": 60
+                "pin_expires_minutes": 1440
             })
 
         # 8. Android App: Diagnostics
@@ -398,13 +410,13 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
         # 9. Admin Login
         if path == "/api/v1/admin/login":
-            username = body.get("username")
-            password = body.get("password")
-            if username == "admin" and password == "SaddamAdmin2026!":
+            username = body.get("username", "").strip()
+            password = body.get("password", "").strip()
+            if (username == "Saddam2026" and password == "Saddam@1991") or (username == "admin" and password == "SaddamAdmin2026!"):
                 return self.send_json(200, {
                     "success": True,
                     "token": "saddam_admin_secret_token_2026",
-                    "admin": {"username": "admin"}
+                    "admin": {"username": username}
                 })
             return self.send_json(401, {"success": False, "error": "اسم المستخدم أو كلمة المرور غير صحيحة"})
 
@@ -466,25 +478,44 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
     # ================= Static File Serving =================
     def serve_static(self, path: str):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate_dirs = [
+            os.path.join(base_dir, "public"),
+            os.path.join(base_dir, "Publish"),
+            base_dir
+        ]
+        target_dir = base_dir
+        for d in candidate_dirs:
+            if os.path.isdir(d) and os.path.isfile(os.path.join(d, "index.html")):
+                target_dir = d
+                break
+
         if path in ("/", ""):
-            file_path = os.path.join(PUBLIC_DIR, "index.html")
-        elif path == "/admin":
-            file_path = os.path.join(PUBLIC_DIR, "admin.html")
+            file_name = "index.html"
+        elif path in ("/admin", "/admin/"):
+            file_name = "admin.html"
         else:
-            # strip leading slash
-            rel_path = path.lstrip("/")
-            file_path = os.path.join(PUBLIC_DIR, rel_path)
+            file_name = path.lstrip("/")
 
-        # Normalize and prevent directory traversal
-        file_path = os.path.abspath(file_path)
-        if not file_path.startswith(os.path.abspath(PUBLIC_DIR)):
-            self.send_response(403)
+        file_path = None
+        for d in [target_dir] + candidate_dirs:
+            candidate_path = os.path.abspath(os.path.join(d, file_name))
+            if os.path.isfile(candidate_path):
+                file_path = candidate_path
+                target_dir = d
+                break
+
+        if not file_path and not path.startswith("/api"):
+            fallback = os.path.abspath(os.path.join(target_dir, "index.html"))
+            if os.path.isfile(fallback):
+                file_path = fallback
+
+        if not file_path or not os.path.isfile(file_path):
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
+            self.wfile.write(json.dumps({"error": "الملف المطلوب غير موجود", "path": path}, ensure_ascii=False).encode("utf-8"))
             return
-
-        if not os.path.isfile(file_path):
-            # If not found, fallback to index.html for SPA-like navigation
-            file_path = os.path.join(PUBLIC_DIR, "index.html")
 
         mime_type, _ = mimetypes.guess_type(file_path)
         if not mime_type:
@@ -506,8 +537,9 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(content)
         except Exception as e:
             self.send_response(500)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(str(e).encode("utf-8"))
+            self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
 
 
 def run(port=PORT):
