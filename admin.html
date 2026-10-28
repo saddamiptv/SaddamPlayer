@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Security Headers -->
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+  <meta http-equiv="X-Frame-Options" content="SAMEORIGIN">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+
+  <title>SADDAM IPTV - لوحة إدارة النظام</title>
+  <link rel="icon" type="image/png" href="logo.png">
+
+  <!-- Google Fonts: Cairo & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Custom Design System -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="brand-link">
+        <img src="logo.png" alt="SADDAM IPTV Logo" class="brand-logo-img">
+        <div class="brand-title">
+          <span>SADDAM</span>
+          <span class="gradient-text">IPTV</span>
+          <span class="brand-badge" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">ADMIN</span>
+        </div>
+      </a>
+
+      <div class="header-actions">
+        <a href="index.html" class="btn btn-secondary btn-sm">
+          <i class="fa-solid fa-arrow-right"></i>
+          <span>العودة للموقع الرئيسي</span>
+        </a>
+        <button id="btnAdminLogout" class="btn btn-danger btn-sm hidden">
+          <i class="fa-solid fa-power-off"></i>
+          <span>خروج المشرف</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main style="flex: 1; padding: 40px 0;">
+    <div class="container">
+
+      <!-- ================= Admin Login Form ================= -->
+      <section id="adminLoginSection" class="pairing-section" style="padding: 0;">
+        <div class="pairing-card" style="max-width: 440px;">
+          <div class="pairing-card-header">
+            <div class="pairing-logo-wrapper">
+              <i class="fa-solid fa-shield-halved" style="font-size: 3.5rem; color: var(--primary);"></i>
+            </div>
+            <h1 class="pairing-title">دخول <span class="gradient-text">المشرف</span></h1>
+            <p class="pairing-subtitle">لوحة إدارة النظام المركزية - خاصة بمدير النظام فقط</p>
+          </div>
+
+          <div id="adminLoginAlert" class="alert-box hidden"></div>
+
+          <form id="adminLoginForm">
+            <div class="form-group">
+              <label class="form-label" for="adminUser">اسم المستخدم</label>
+              <input type="text" id="adminUser" class="form-input latin-code" value="admin" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="adminPass">كلمة المرور الإدارية</label>
+              <input type="password" id="adminPass" class="form-input" value="SaddamAdmin2026!" required>
+            </div>
+
+            <button type="submit" id="btnAdminLogin" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
+              <span>تسجيل الدخول للوحة التحكم</span>
+              <i class="fa-solid fa-lock"></i>
+            </button>
+          </form>
+
+          <div style="margin-top: 20px; font-size: 0.82rem; text-align: center; color: var(--text-dim);">
+            بيانات الدخول الافتراضية: admin / SaddamAdmin2026!
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Admin Dashboard ================= -->
+      <section id="adminDashboardSection" class="hidden">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>إجمالي الأجهزة المسجلة</h3>
+              <div class="stat-number" id="adminStatDevices">0</div>
+            </div>
+            <div class="stat-icon cyan"><i class="fa-solid fa-tv"></i></div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>الأجهزة النشطة</h3>
+              <div class="stat-number" id="adminStatActive">0</div>
+            </div>
+            <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>إجمالي مصادر IPTV</h3>
+              <div class="stat-number" id="adminStatSources">0</div>
+            </div>
+            <div class="stat-icon purple"><i class="fa-solid fa-satellite-dish"></i></div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>الجلسات النشطة الآن</h3>
+              <div class="stat-number" id="adminStatSessions">0</div>
+            </div>
+            <div class="stat-icon orange"><i class="fa-solid fa-users"></i></div>
+          </div>
+        </div>
+
+        <!-- Provision New Device Card -->
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2 class="card-title">
+              <i class="fa-solid fa-plus-circle" style="color: var(--primary);"></i>
+              <span>تسجيل جهاز جديد وإنشاء كود PIN</span>
+            </h2>
+          </div>
+          <form id="createDeviceForm" style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <input type="text" id="newDeviceMac" class="form-input code-style" placeholder="MAC: 00:11:22:33:44:55" style="width: 220px;" required>
+            <input type="text" id="newDeviceLabel" class="form-input" placeholder="اسم الجهاز (مثال: شاشة غرفة النوم)" style="width: 250px;">
+            <button type="submit" class="btn btn-primary">
+              <i class="fa-solid fa-key"></i> توليد PIN وتسجيل الجهاز
+            </button>
+          </form>
+          <div id="newDeviceResult" style="margin-top: 14px; font-size: 0.95rem; font-weight: 700; color: var(--success);" class="hidden"></div>
+        </div>
+
+        <!-- Devices Table Card -->
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2 class="card-title">
+              <i class="fa-solid fa-list" style="color: var(--primary);"></i>
+              <span>الأجهزة المسجلة في النظام</span>
+            </h2>
+            <button class="btn btn-secondary btn-sm" onclick="loadAdminData()">
+              <i class="fa-solid fa-rotate"></i> تحديث القائمة
+            </button>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 0.9rem;">
+              <thead>
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-muted);">
+                  <th style="padding: 12px;">المعرف</th>
+                  <th style="padding: 12px;">كود الجهاز (MAC)</th>
+                  <th style="padding: 12px;">اسم الجهاز</th>
+                  <th style="padding: 12px;">المنصة والإصدار</th>
+                  <th style="padding: 12px;">الحالة</th>
+                  <th style="padding: 12px;">إصدار المزامنة</th>
+                  <th style="padding: 12px; text-align: left;">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="devicesTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Audit Logs Card -->
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2 class="card-title">
+              <i class="fa-solid fa-clipboard-list" style="color: var(--primary);"></i>
+              <span>سجل التدقيق والأحداث الحساسة (Audit Log)</span>
+            </h2>
+          </div>
+          <div style="overflow-x: auto; max-height: 400px;">
+            <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 0.85rem;">
+              <thead>
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-muted);">
+                  <th style="padding: 10px;">التوقيت</th>
+                  <th style="padding: 10px;">نوع الفاعل</th>
+                  <th style="padding: 10px;">الإجراء (Action)</th>
+                  <th style="padding: 10px;">الهدف</th>
+                  <th style="padding: 10px;">تفاصيل منقحة (Sanitized)</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogsBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

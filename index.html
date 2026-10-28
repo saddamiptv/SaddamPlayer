@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Security Headers -->
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+  <meta http-equiv="X-Frame-Options" content="SAMEORIGIN">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+
+  <title>SADDAM IPTV - إدارة الأجهزة ومصادر البث</title>
+  <meta name="description" content="البوابة الرسمية لتطبيق SADDAM IPTV لإدارة أجهزة البث وإضافة مصادر M3U و Xtream Codes مباشرة دون الحاجة لإنشاء حساب.">
+  <link rel="icon" type="image/png" href="logo.png">
+
+  <!-- Google Fonts: Cairo (Arabic) & Outfit (Latin/Codes) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Custom Design System -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="brand-link">
+        <img src="logo.png" alt="SADDAM IPTV Logo" class="brand-logo-img">
+        <div class="brand-title">
+          <span>SADDAM</span>
+          <span class="gradient-text">IPTV</span>
+          <span class="brand-badge">PORTAL</span>
+        </div>
+      </a>
+
+      <div class="header-actions">
+        <!-- Device Info Badge (Shown only when paired) -->
+        <div id="headerDeviceBadge" class="hidden" style="display: flex; align-items: center; gap: 12px;">
+          <div class="device-status-indicator">
+            <span class="status-dot"></span>
+            <span id="deviceMacMasked" class="latin-code" style="font-weight: 700; color: #fff;"></span>
+          </div>
+        </div>
+
+        <button id="btnLogout" class="btn btn-secondary btn-sm hidden">
+          <i class="fa-solid fa-right-from-bracket"></i>
+          <span>إنهاء الجلسة</span>
+        </button>
+
+        <a href="admin.html" class="btn btn-secondary btn-sm" title="لوحة إدارة النظام (للمشرفين فقط)" style="opacity: 0.7;">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>الإدارة</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main>
+    <!-- ====================================================================
+         PAGE 1: DIRECT DEVICE PAIRING (LANDING PAGE - NO SIGNUP / NO LOGIN)
+         ==================================================================== -->
+    <section id="pairingSection" class="pairing-section">
+      <div class="container" style="display: flex; justify-content: center;">
+        <div class="pairing-card">
+          <div class="pairing-card-header">
+            <div class="pairing-logo-wrapper">
+              <img src="logo.png" alt="SADDAM IPTV Logo" class="pairing-logo-img">
+            </div>
+            <h1 class="pairing-title">إدارة <span class="gradient-text">جهازك</span></h1>
+            <p class="pairing-subtitle">
+              أدخل رمز <strong>MAC Code</strong> ورمز <strong>PIN</strong> الظاهرين في تطبيق SADDAM IPTV على جهازك للمتابعة وإدارة مصادر البث.
+            </p>
+          </div>
+
+          <!-- Alert Messages Container -->
+          <div id="pairingAlert" class="alert-box hidden"></div>
+
+          <!-- Direct Pairing Form -->
+          <form id="pairingForm">
+            <div class="form-group">
+              <label class="form-label" for="macInput">
+                <span>رمز الجهاز (MAC Code)</span>
+                <span class="form-label-hint open-help-modal">أين أجد الرمز؟</span>
+              </label>
+              <div class="input-wrapper">
+                <input 
+                  type="text" 
+                  id="macInput" 
+                  class="form-input code-style" 
+                  placeholder="AA:BB:CC:11:22:33" 
+                  maxlength="17" 
+                  autocomplete="off" 
+                  spellcheck="false" 
+                  required
+                >
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="pinInput">
+                <span>رمز PIN (6 أرقام)</span>
+                <span style="font-size: 0.78rem; color: var(--text-dim);">صالح للاستخدام المؤقت</span>
+              </label>
+              <div class="input-wrapper">
+                <input 
+                  type="password" 
+                  id="pinInput" 
+                  class="form-input code-style" 
+                  placeholder="••••••" 
+                  maxlength="6" 
+                  pattern="[0-9]{6}" 
+                  inputmode="numeric" 
+                  autocomplete="off" 
+                  required
+                >
+                <button type="button" id="togglePinVisibility" class="input-toggle-btn" title="إظهار / إخفاء الرمز">
+                  <i class="fa-solid fa-eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" id="btnPair" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
+              <span>ربط الجهاز والمتابعة</span>
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         PAGE 2: DEVICE MANAGEMENT DASHBOARD (PORTAL AFTER PAIRING)
+         ==================================================================== -->
+    <section id="dashboardSection" class="dashboard-wrapper hidden">
+      <div class="container">
+
+        <!-- Device Overview Header Card -->
+        <div class="device-header-card">
+          <div class="device-info-left">
+            <div class="device-avatar-icon">
+              <i class="fa-solid fa-tv"></i>
+            </div>
+            <div>
+              <div class="device-meta-title">
+                <span id="deviceLabel">جهاز الصالون</span>
+                <span class="device-code-pill latin-code" id="deviceMacMaskedDisplay"></span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 0.88rem; color: var(--text-muted);">
+                <span id="devicePlatform">Android TV</span>
+                <span>•</span>
+                <span class="device-status-indicator">
+                  <span class="status-dot"></span>
+                  <span>متصل ومقترن بالخادم</span>
+                </span>
+                <span>•</span>
+                <span>إصدار المزامنة: <strong id="deviceSyncVersion" class="latin-code" style="color: var(--primary);">v1</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="device-header-actions">
+            <button class="btn btn-primary" onclick="openAddSourceModal()">
+              <i class="fa-solid fa-plus"></i>
+              <span>إضافة مصدر</span>
+            </button>
+            <button class="btn btn-danger btn-sm" id="btnUnlink" title="إلغاء ربط هذا الجهاز نهائياً">
+              <i class="fa-solid fa-link-slash"></i>
+              <span>إلغاء الربط</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="tabs-navigation">
+          <button class="tab-btn active" data-tab="overview">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span>نظرة عامة</span>
+          </button>
+          <button class="tab-btn" data-tab="sources">
+            <i class="fa-solid fa-satellite-dish"></i>
+            <span>مصادر IPTV</span>
+          </button>
+          <button class="tab-btn" data-tab="sync">
+            <i class="fa-solid fa-rotate"></i>
+            <span>المزامنة والتطبيق</span>
+          </button>
+          <button class="tab-btn" data-tab="settings">
+            <i class="fa-solid fa-sliders"></i>
+            <span>إعدادات الجلسة</span>
+          </button>
+          <button class="tab-btn" data-tab="faq">
+            <i class="fa-solid fa-circle-question"></i>
+            <span>المساعدة والتعليمات</span>
+          </button>
+        </div>
+
+        <!-- Tab 1: Overview -->
+        <div id="tabPanel-overview" class="tab-content-panel">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-info">
+                <h3>إجمالي المصادر</h3>
+                <div class="stat-number" id="statTotalSources">0</div>
+              </div>
+              <div class="stat-icon cyan">
+                <i class="fa-solid fa-list-check"></i>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-info">
+                <h3>المصادر المفعلة للتطبيق</h3>
+                <div class="stat-number" id="statActiveSources">0</div>
+              </div>
+              <div class="stat-icon green">
+                <i class="fa-solid fa-tower-broadcast"></i>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-info">
+                <h3>المصادر المختبرة بنجاح</h3>
+                <div class="stat-number" id="statWorkingSources">0</div>
+              </div>
+              <div class="stat-icon purple">
+                <i class="fa-solid fa-circle-check"></i>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-info">
+                <h3>حالة المزامنة الحالية</h3>
+                <div class="stat-number" id="statSyncState" style="font-size: 1.15rem; font-family: var(--font-arabic);">متزامن</div>
+              </div>
+              <div class="stat-icon orange">
+                <i class="fa-solid fa-cloud-arrow-down"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Guide Card -->
+          <div class="content-card">
+            <div class="content-card-header">
+              <h2 class="card-title">
+                <i class="fa-solid fa-lightbulb" style="color: var(--primary);"></i>
+                <span>كيف يعمل SADDAM IPTV؟</span>
+              </h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+              <div style="background: rgba(0,0,0,0.25); padding: 20px; border-radius: 12px; border-right: 3px solid var(--primary);">
+                <h4 style="font-size: 1.05rem; margin-bottom: 8px; color: var(--primary);">1. أضف روابط قوائم التشغيل</h4>
+                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;">
+                  قم بإضافة مصادر M3U أو بيانات خادم Xtream Codes من خلال زر «إضافة مصدر».
+                </p>
+              </div>
+
+              <div style="background: rgba(0,0,0,0.25); padding: 20px; border-radius: 12px; border-right: 3px solid var(--secondary);">
+                <h4 style="font-size: 1.05rem; margin-bottom: 8px; color: var(--secondary);">2. فحص وتفعيل المصادر</h4>
+                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;">
+                  يمكنك اختبار كفاءة الاتصال بالمصدر والتأكد من استجابته وتفعيله أو تعطيله في أي وقت.
+                </p>
+              </div>
+
+              <div style="background: rgba(0,0,0,0.25); padding: 20px; border-radius: 12px; border-right: 3px solid var(--success);">
+                <h4 style="font-size: 1.05rem; margin-bottom: 8px; color: var(--success);">3. افتح التطبيق في جهازك</h4>
+                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;">
+                  عند تشغيل تطبيق SADDAM IPTV، يستقبل تلقائياً القوائم المفعلة دون الحاجة لأي إدخال يدوي في التلفاز.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: IPTV Sources -->
+        <div id="tabPanel-sources" class="tab-content-panel hidden">
+          <div class="content-card">
+            <div class="content-card-header">
+              <div>
+                <h2 class="card-title">
+                  <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
+                  <span>قوائم ومصادر IPTV المرتبطة بهذا الجهاز</span>
+                </h2>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+                  يمكنك إدارة روابط M3U وخوادم Xtream وتفعيل ما ترغب بظهوره في تطبيق Android.
+                </p>
+              </div>
+
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <input 
+                  type="text" 
+                  id="sourceSearchInput" 
+                  class="form-input btn-sm" 
+                  placeholder="بحث في المصادر..." 
+                  style="width: 200px; padding: 8px 14px;"
+                >
+                <select id="sourceFilterSelect" class="form-input btn-sm" style="width: 140px; padding: 8px 12px;">
+                  <option value="all">كل الأنواع</option>
+                  <option value="m3u">قوائم M3U</option>
+                  <option value="xtream">خوادم Xtream</option>
+                </select>
+                <button class="btn btn-primary btn-sm" id="btnOpenAddSource">
+                  <i class="fa-solid fa-plus"></i> إضافة مصدر
+                </button>
+              </div>
+            </div>
+
+            <!-- Sources List Grid -->
+            <div id="sourcesContainer" class="sources-grid">
+              <!-- Dynamically populated by app.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Sync & Android Integration -->
+        <div id="tabPanel-sync" class="tab-content-panel hidden">
+          <div class="content-card">
+            <div class="content-card-header">
+              <div>
+                <h2 class="card-title">
+                  <i class="fa-solid fa-arrows-rotate" style="color: var(--primary);"></i>
+                  <span>المزامنة مع تطبيق SADDAM IPTV (Android)</span>
+                </h2>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+                  هذه الحزمة البرمجية يتم إرسالها بأمان لتطبيق Android عبر واجهة API الخاصة بالجهاز.
+                </p>
+              </div>
+
+              <button class="btn btn-secondary btn-sm" id="btnRefreshSyncPreview">
+                <i class="fa-solid fa-rotate"></i> تحديث الحزمة
+              </button>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+              <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <span class="status-pill working">
+                  <i class="fa-solid fa-check-double"></i> API Endpoint: /api/v1/devices/sources
+                </span>
+                <span class="status-pill untested">
+                  <i class="fa-solid fa-shield-halved"></i> التشفير: HTTPS آمن
+                </span>
+              </div>
+              <pre id="syncPayloadViewer" class="code-preview-block">// جارٍ جلب البيانات...</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Device & Session Settings -->
+        <div id="tabPanel-settings" class="tab-content-panel hidden">
+          <div class="content-card">
+            <div class="content-card-header">
+              <h2 class="card-title">
+                <i class="fa-solid fa-sliders" style="color: var(--primary);"></i>
+                <span>إعدادات الجهاز والجلسة الحالية</span>
+              </h2>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px;">
+              <div style="background: rgba(0,0,0,0.25); padding: 18px; border-radius: 12px;">
+                <div style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 4px;">أمان الجلسة</div>
+                <div style="font-weight: 700; color: #fff; margin-bottom: 10px;">جلسة مشفرة عبر كوكيز آمنة (HttpOnly)</div>
+                <p style="font-size: 0.82rem; color: var(--text-muted);">تنتهي صلاحية الجلسة تلقائياً لضمان الخصوصية عند عدم الاستخدام.</p>
+              </div>
+
+              <div style="background: rgba(0,0,0,0.25); padding: 18px; border-radius: 12px;">
+                <div style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 4px;">حماية البيانات</div>
+                <div style="font-weight: 700; color: #fff; margin-bottom: 10px;">لا يتم تخزين كلمات المرور كنص مكشوف</div>
+                <p style="font-size: 0.82rem; color: var(--text-muted);">جميع بيانات الاعتماد مشفرة في قاعدة البيانات ومحمية من هجمات SSRF.</p>
+              </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div style="border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05); padding: 24px; border-radius: 16px;">
+              <h3 style="color: var(--danger); font-size: 1.1rem; margin-bottom: 8px;">
+                <i class="fa-solid fa-triangle-exclamation"></i> منطقة الخطر (إلغاء ربط الجهاز)
+              </h3>
+              <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 18px; line-height: 1.6;">
+                إلغاء الربط سيؤدي لإنهاء كافة الجلسات المفتوحة لهذا الجهاز فوراً. سيتطلب فتح التطبيق في التلفاز وإعادة ربطه برمز PIN جديد.
+              </p>
+              <button class="btn btn-danger" onclick="openModal(DOM.modalUnlink)">
+                <i class="fa-solid fa-link-slash"></i> إلغاء ربط هذا الجهاز
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 5: FAQ & Help -->
+        <div id="tabPanel-faq" class="tab-content-panel hidden">
+          <div class="content-card">
+            <div class="content-card-header">
+              <h2 class="card-title">
+                <i class="fa-solid fa-circle-question" style="color: var(--primary);"></i>
+                <span>الأسئلة الشائعة والتعليمات</span>
+              </h2>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="background: rgba(0,0,0,0.2); padding: 18px; border-radius: 12px;">
+                <h4 style="font-size: 1rem; color: var(--primary); margin-bottom: 6px;">هل أحتاج لإنشاء حساب أو بريد إلكتروني؟</h4>
+                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.6;">
+                  لا، تطبيق SADDAM IPTV مصمم بمبدأ الخصوصية المطلقة. الربط يتم مباشرة عبر MAC Code و PIN الخاصين بجهازك دون أي حسابات أو كلمات مرور.
+                </p>
+              </div>
+
+              <div style="background: rgba(0,0,0,0.2); padding: 18px; border-radius: 12px;">
+                <h4 style="font-size: 1rem; color: var(--primary); margin-bottom: 6px;">ما هي أنواع المصادر التي يدعمها النظام؟</h4>
+                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.6;">
+                  يدعم قوائم التشغيل بصيغ M3U و M3U8، بالإضافة لاشتراكات Xtream Codes API (الخادم، اسم المستخدم، وكلمة المرور).
+                </p>
+              </div>
+
+              <div style="background: rgba(0,0,0,0.2); padding: 18px; border-radius: 12px;">
+                <h4 style="font-size: 1rem; color: var(--primary); margin-bottom: 6px;">هل يمكن تعديل القوائم من داخل تطبيق التلفاز؟</h4>
+                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.6;">
+                  لا، تطبيق Android مخصص لتشغيل وعرض القنوات والمحتوى فقط. إدارة المصادر وإضافتها تتم حصراً وبسهولة من خلال هذا الموقع.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- ====================================================================
+       MODALS
+       ==================================================================== -->
+
+  <!-- Modal: How to get MAC & PIN -->
+  <div id="modalHelp" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="card-title">
+          <i class="fa-solid fa-tv" style="color: var(--primary);"></i>
+          <span>كيف أحصل على MAC Code و PIN؟</span>
+        </h3>
+        <button class="modal-close-btn modal-close-trigger">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.92rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">
+          اتبع الخطوات البسيطة التالية من جهاز Android أو التلفاز الخاص بك:
+        </p>
+        
+        <!-- Mock TV screen visual -->
+        <div style="background: #03060f; border: 2px solid rgba(0, 210, 255, 0.3); border-radius: 16px; padding: 20px; margin-bottom: 22px; text-align: center; box-shadow: 0 0 25px rgba(0,210,255,0.15);">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px;">
+            <img src="/logo.png" style="width: 28px; height: 28px; border-radius: 6px;">
+            <span style="font-weight: 800; font-size: 0.95rem;">SADDAM IPTV TV</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 10px; display: inline-block;">
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Device MAC Code:</div>
+            <div class="latin-code" style="font-size: 1.1rem; font-weight: 800; color: var(--primary);">AA:BB:CC:11:22:33</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px; margin-bottom: 4px;">Pairing PIN:</div>
+            <div class="latin-code" style="font-size: 1.4rem; font-weight: 800; color: #fff; letter-spacing: 4px;">123456</div>
+          </div>
+        </div>
+
+        <ol style="padding-right: 20px; font-size: 0.9rem; color: var(--text-main); line-height: 1.8;">
+          <li>افتح تطبيق <strong>SADDAM IPTV</strong> على تلفازك الذكي أو هاتفك.</li>
+          <li>ستظهر لك شاشة الربط تعرض كود الجهاز <strong>MAC Code</strong> ورمز <strong>PIN</strong>.</li>
+          <li>أدخل الرمزين في الصفحة الحالية ثم اضغط <strong>ربط الجهاز والمتابعة</strong>.</li>
+        </ol>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary modal-close-trigger">حسناً، فهمت ذلك</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add / Edit Source -->
+  <div id="modalSource" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="card-title" id="sourceModalTitle">إضافة مصدر IPTV جديد</h3>
+        <button class="modal-close-btn modal-close-trigger">&times;</button>
+      </div>
+      <form id="sourceForm">
+        <div class="modal-body">
+          <!-- Type Tabs -->
+          <div class="type-selector-tabs">
+            <div class="type-tab-option active" id="tabOptionM3u">
+              <i class="fa-solid fa-list-ul"></i>
+              <span>قائمة تشغيل M3U / M3U8</span>
+            </div>
+            <div class="type-tab-option" id="tabOptionXtream">
+              <i class="fa-solid fa-server"></i>
+              <span>خادم Xtream Codes</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="sourceNameInput">اسم المصدر (اسم مميز للباقة)</label>
+            <input type="text" id="sourceNameInput" class="form-input" placeholder="مثال: باقة القنوات العربية والرياضية" required>
+          </div>
+
+          <!-- M3U Fields -->
+          <div id="m3uFields">
+            <div class="form-group">
+              <label class="form-label" for="sourceUrlInput">رابط قائمة التشغيل (URL)</label>
+              <input type="url" id="sourceUrlInput" class="form-input latin-code" placeholder="https://example.com/playlist.m3u">
+            </div>
+          </div>
+
+          <!-- Xtream Fields -->
+          <div id="xtreamFields" class="hidden">
+            <div class="form-group">
+              <label class="form-label" for="xtreamServerInput">عنوان الخادم والمنفذ (Server URL)</label>
+              <input type="text" id="xtreamServerInput" class="form-input latin-code" placeholder="http://iptv.server.com:8080">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="xtreamUserInput">اسم المستخدم (Username)</label>
+              <input type="text" id="xtreamUserInput" class="form-input latin-code" placeholder="username">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="xtreamPassInput">كلمة المرور (Password)</label>
+              <input type="password" id="xtreamPassInput" class="form-input latin-code" placeholder="••••••••">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="sourceDescInput">وصف اختياري</label>
+            <input type="text" id="sourceDescInput" class="form-input" placeholder="ملاحظات حول هذا المصدر...">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="switch-label">
+              <div class="switch">
+                <input type="checkbox" id="sourceEnabledCheckbox" checked>
+                <span class="slider"></span>
+              </div>
+              <span style="font-weight: 600; color: #fff;">تفعيل هذا المصدر فوراً لتطبيق Android</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary modal-close-trigger">إلغاء</button>
+          <button type="submit" id="btnSaveSource" class="btn btn-primary">حفظ المصدر</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Confirm Delete Source -->
+  <div id="modalDelete" class="modal-overlay">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 class="card-title" style="color: var(--danger);">
+          <i class="fa-solid fa-trash"></i>
+          <span>تأكيد حذف المصدر</span>
+        </h3>
+        <button class="modal-close-btn modal-close-trigger">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">
+          هل أنت متأكد من رغبتك في حذف المصدر:
+          <br>
+          <strong id="deleteSourceNameText" style="color: #fff; font-size: 1.05rem;"></strong>؟
+          <br>
+          سيتم تحديث المزامنة وإزالته من تطبيق الجهاز فوراً.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close-trigger">إلغاء</button>
+        <button type="button" id="btnConfirmDeleteSource" class="btn btn-danger">تأكيد الحذف</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Confirm Unlink Device -->
+  <div id="modalUnlink" class="modal-overlay">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="card-title" style="color: var(--danger);">
+          <i class="fa-solid fa-link-slash"></i>
+          <span>إلغاء ربط الجهاز</span>
+        </h3>
+        <button class="modal-close-btn modal-close-trigger">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">
+          هل تريد بالتأكيد إلغاء ربط هذا الجهاز؟
+          <br><br>
+          سيتم إبطال جميع جلسات الإدارة الحالية لهذا الجهاز. ستتمكن من إعادة ربطه لاحقاً عبر إنشاء PIN جديد من التطبيق.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close-trigger">تراجع</button>
+        <button type="button" id="btnConfirmUnlink" class="btn btn-danger">تأكيد إلغاء الربط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Privacy Policy & Terms -->
+  <div id="modalPrivacy" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="card-title">سياسة الخصوصية وشروط الاستخدام</h3>
+        <button class="modal-close-btn modal-close-trigger">&times;</button>
+      </div>
+      <div class="modal-body" style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.8;">
+        <h4 style="color: #fff; margin-bottom: 6px;">1. مبدأ الخصوصية:</h4>
+        <p>لا يطلب موقع SADDAM IPTV ولا يجمع أي معلومات شخصية، أو عناوين بريد إلكتروني، أو أسماء حقيقية. المصادقة مبنية حصرياً على رمز الجهاز ورمز PIN المؤقت.</p>
+        <br>
+        <h4 style="color: #fff; margin-bottom: 6px;">2. حماية الروابط وبيانات الاعتماد:</h4>
+        <p>يتم تخزين بيانات خوادم IPTV مشفرة ومحمية، ولا تُعرض كلمات المرور كنص مكشوف بعد حفظها.</p>
+        <br>
+        <h4 style="color: #fff; margin-bottom: 6px;">3. مسؤولية المحتوى:</h4>
+        <p>الموقع عبارة عن وسيلة تقنية لإدارة وتمرير قوائم التشغيل إلى جهازك. المستخدم مسؤول عن امتلاك حق الوصول والاستخدام الشرعي لأي مصادر IPTV يقوم بإضافتها.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary modal-close-trigger">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <img src="logo.png" style="width: 24px; height: 24px; border-radius: 6px;">
+        <span>جميع الحقوق محفوظة &copy; 2026 <strong>SADDAM IPTV</strong></span>
+      </div>
+
+      <div class="footer-links">
+        <span class="footer-link open-help-modal">كيفية الربط</span>
+        <span class="footer-link open-privacy-modal">سياسة الخصوصية</span>
+        <span class="footer-link open-privacy-modal">شروط الاستخدام</span>
+        <a href="admin.html" class="footer-link" style="color: var(--primary);">لوحة الإدارة</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
