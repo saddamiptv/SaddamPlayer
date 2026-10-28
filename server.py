@@ -177,20 +177,55 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                         "sync_version": 1,
                         "token": None
                     })
-                # check if there's any active session
-                cursor.execute("SELECT token FROM device_sessions WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1", (dev["id"], int(time.time())))
-                active_sess = cursor.fetchone()
+                # Check active session safely
+                has_active = False
+                token_val = None
+                try:
+                    cursor.execute("""
+                        SELECT id, token FROM device_sessions
+                        WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ?
+                        ORDER BY id DESC LIMIT 1
+                    """, (dev["id"], int(time.time())))
+                    active_sess = cursor.fetchone()
+                    if active_sess:
+                        has_active = True
+                        token_val = active_sess["token"] if "token" in active_sess.keys() else None
+                except Exception:
+                    cursor.execute("""
+                        SELECT id FROM device_sessions
+                        WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ?
+                        ORDER BY id DESC LIMIT 1
+                    """, (dev["id"], int(time.time())))
+                    active_sess = cursor.fetchone()
+                    has_active = active_sess is not None
+
                 return self.send_json(200, {
-                    "paired": active_sess is not None,
+                    "paired": has_active,
                     "device_status": dev["status"],
                     "sync_version": dev["sync_version"],
-                    "token": active_sess["token"] if active_sess else None
+                    "token": token_val
                 })
 
         if path == "/api/v1/devices/sources":
             device = self.authenticate_device()
             if not device:
-                return self.send_json(401, {"error": "الجلسة غير صالحة أو غير مأذونة"})
+                req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
+                if req_mac:
+                    clean_mac = security.normalize_mac(req_mac)
+                    with db.get_db() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
+                        row = cursor.fetchone()
+                        if row:
+                            device = dict(row)
+
+            if not device:
+                return self.send_json(200, {
+                    "device_id": None,
+                    "sync_version": 1,
+                    "sources": []
+                })
+
             sources = db.get_device_sources(device["id"], only_enabled=True)
             return self.send_json(200, {
                 "device_id": device["id"],
@@ -201,7 +236,24 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/v1/devices/sync":
             device = self.authenticate_device()
             if not device:
-                return self.send_json(401, {"error": "الجلسة غير صالحة"})
+                req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
+                if req_mac:
+                    clean_mac = security.normalize_mac(req_mac)
+                    with db.get_db() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
+                        row = cursor.fetchone()
+                        if row:
+                            device = dict(row)
+
+            if not device:
+                return self.send_json(200, {
+                    "device_id": None,
+                    "sync_version": 1,
+                    "status": "waiting",
+                    "timestamp": int(time.time())
+                })
+
             return self.send_json(200, {
                 "device_id": device["id"],
                 "sync_version": device["sync_version"],

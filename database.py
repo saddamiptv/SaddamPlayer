@@ -67,6 +67,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id INTEGER NOT NULL,
                 token_hash TEXT UNIQUE NOT NULL,
+                token TEXT,
                 expires_at INTEGER NOT NULL,
                 revoked_at INTEGER,
                 last_used_at INTEGER,
@@ -74,6 +75,10 @@ def init_db():
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE device_sessions ADD COLUMN token TEXT")
+        except Exception:
+            pass
 
         # 4. IPTV Sources Table
         cursor.execute("""
@@ -311,9 +316,9 @@ def create_device_session(device_id: int, lifetime_hours: int = 24) -> str:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO device_sessions (device_id, token_hash, expires_at, revoked_at, last_used_at, created_at)
-            VALUES (?, ?, ?, NULL, ?, ?)
-        """, (device_id, tok_hash, expires_at, now, now))
+            INSERT INTO device_sessions (device_id, token_hash, token, expires_at, revoked_at, last_used_at, created_at)
+            VALUES (?, ?, ?, ?, NULL, ?, ?)
+        """, (device_id, tok_hash, raw_token, expires_at, now, now))
         conn.commit()
 
     log_audit("device_session", str(device_id), "session_created", "device", str(device_id))
