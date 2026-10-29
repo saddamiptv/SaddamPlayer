@@ -367,33 +367,18 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                         if row:
                             device = dict(row)
 
-            sources = []
-            if device:
-                sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
+            if not device:
+                return self.send_json(200, {
+                    "device_id": None,
+                    "sync_version": 1,
+                    "sources": []
+                })
 
-            # Fallback: if device has no sources yet or device is not paired, provide all active platform sources
-            if not sources:
-                with db.get_db() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM iptv_sources WHERE enabled = 1 ORDER BY id DESC")
-                    rows = cursor.fetchall()
-                    seen_urls = set()
-                    for r in rows:
-                        d = dict(r)
-                        # De-duplicate identical server URLs
-                        key = (d.get("server_url") or "").strip().rstrip("/")
-                        if key in seen_urls:
-                            continue
-                        seen_urls.add(key)
-                        d['password'] = d.get('password_encrypted') or ""
-                        d['is_enabled'] = d.get('enabled', 1)
-                        sources.append(d)
-
-            dev_id = device["id"] if device else 1
-            sync_ver = device["sync_version"] if device else 1
+            # Strictly return ONLY sources added for THIS specific device
+            sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
             return self.send_json(200, {
-                "device_id": dev_id,
-                "sync_version": sync_ver,
+                "device_id": device["id"],
+                "sync_version": device["sync_version"],
                 "sources": sources
             })
 
