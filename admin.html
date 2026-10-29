@@ -93,10 +93,10 @@
       <!-- ================= Admin Dashboard ================= -->
       <section id="adminDashboardSection" class="hidden">
         <!-- Stats Grid -->
-        <div class="stats-grid">
+        <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
           <div class="stat-card">
             <div class="stat-info">
-              <h3>إجمالي الأجهزة المسجلة</h3>
+              <h3>إجمالي الأجهزة</h3>
               <div class="stat-number" id="adminStatDevices">0</div>
             </div>
             <div class="stat-icon cyan"><i class="fa-solid fa-tv"></i></div>
@@ -105,9 +105,17 @@
           <div class="stat-card">
             <div class="stat-info">
               <h3>الأجهزة النشطة</h3>
-              <div class="stat-number" id="adminStatActive">0</div>
+              <div class="stat-number" id="adminStatActive" style="color: var(--success);">0</div>
             </div>
             <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>الأجهزة الموقوفة</h3>
+              <div class="stat-number" id="adminStatDisabled" style="color: var(--danger);">0</div>
+            </div>
+            <div class="stat-icon" style="background: rgba(239, 68, 68, 0.15); color: #f87171;"><i class="fa-solid fa-ban"></i></div>
           </div>
 
           <div class="stat-card">
@@ -147,14 +155,17 @@
 
         <!-- Devices Table Card -->
         <div class="content-card">
-          <div class="content-card-header">
+          <div class="content-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <h2 class="card-title">
-              <i class="fa-solid fa-list" style="color: var(--primary);"></i>
-              <span>الأجهزة المسجلة في النظام</span>
+              <i class="fa-solid fa-sliders" style="color: var(--primary);"></i>
+              <span>لوحة التحكم في الأجهزة (توقيف، تفعيل، حذف، PIN)</span>
             </h2>
-            <button class="btn btn-secondary btn-sm" onclick="loadAdminData()">
-              <i class="fa-solid fa-rotate"></i> تحديث القائمة
-            </button>
+            <div style="display: flex; gap: 10px;">
+              <input type="text" id="deviceSearchInput" class="form-input" placeholder="بحث بالـ MAC أو الاسم..." style="width: 220px; font-size: 0.85rem;" oninput="filterDevicesTable()">
+              <button class="btn btn-secondary btn-sm" onclick="loadAdminData()">
+                <i class="fa-solid fa-rotate"></i> تحديث
+              </button>
+            </div>
           </div>
 
           <div style="overflow-x: auto;">
@@ -165,9 +176,10 @@
                   <th style="padding: 12px;">كود الجهاز (MAC)</th>
                   <th style="padding: 12px;">اسم الجهاز</th>
                   <th style="padding: 12px;">المنصة والإصدار</th>
+                  <th style="padding: 12px;">المصادر</th>
                   <th style="padding: 12px;">الحالة</th>
-                  <th style="padding: 12px;">إصدار المزامنة</th>
-                  <th style="padding: 12px; text-align: left;">إجراءات</th>
+                  <th style="padding: 12px;">المزامنة</th>
+                  <th style="padding: 12px; text-align: center;">إجراءات التحكم</th>
                 </tr>
               </thead>
               <tbody id="devicesTableBody">
@@ -179,11 +191,19 @@
 
         <!-- Audit Logs Card -->
         <div class="content-card">
-          <div class="content-card-header">
+          <div class="content-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <h2 class="card-title">
-              <i class="fa-solid fa-clipboard-list" style="color: var(--primary);"></i>
+              <i class="fa-solid fa-shield-halved" style="color: var(--primary);"></i>
               <span>سجل التدقيق والأحداث الحساسة (Audit Log)</span>
             </h2>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-danger btn-sm" onclick="clearAllAuditLogs()" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+                <i class="fa-solid fa-trash-can"></i> مسح سجل التدقيق بالكامل
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="loadAdminData()">
+                <i class="fa-solid fa-rotate"></i> تحديث
+              </button>
+            </div>
           </div>
           <div style="overflow-x: auto; max-height: 400px;">
             <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 0.85rem;">
@@ -194,6 +214,7 @@
                   <th style="padding: 10px;">الإجراء (Action)</th>
                   <th style="padding: 10px;">الهدف</th>
                   <th style="padding: 10px;">تفاصيل منقحة (Sanitized)</th>
+                  <th style="padding: 10px; text-align: center;">إجراء</th>
                 </tr>
               </thead>
               <tbody id="auditLogsBody">
@@ -209,7 +230,12 @@
   </main>
 
   <script>
-    window.SADDAM_API_BASE = "https://saddamplayer.onrender.com";
+    // Dynamically set API base: Relative when run on local port/host, or Render when on custom domain
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !window.location.port) {
+      window.SADDAM_API_BASE = "https://saddamplayer.onrender.com";
+    } else {
+      window.SADDAM_API_BASE = "";
+    }
   </script>
   <script src="admin.js"></script>
 </body>

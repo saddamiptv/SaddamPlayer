@@ -556,23 +556,115 @@ def get_admin_stats() -> Dict[str, Any]:
         cursor.execute("SELECT COUNT(*) as total FROM devices WHERE status = 'active'")
         active_devices = cursor.fetchone()['total']
 
+        cursor.execute("SELECT COUNT(*) as total FROM devices WHERE status IN ('disabled', 'suspended', 'blocked')")
+        disabled_devices = cursor.fetchone()['total']
+
         cursor.execute("SELECT COUNT(*) as total FROM iptv_sources")
         total_sources = cursor.fetchone()['total']
 
         cursor.execute("SELECT COUNT(*) as total FROM device_sessions WHERE revoked_at IS NULL AND expires_at > ?", (int(time.time()),))
         active_sessions = cursor.fetchone()['total']
 
-        cursor.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 50")
+        cursor.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100")
         logs = [dict(r) for r in cursor.fetchall()]
 
-        cursor.execute("SELECT * FROM devices ORDER BY id DESC")
+        cursor.execute("""
+            SELECT d.*,
+                   (SELECT COUNT(*) FROM iptv_sources WHERE device_id = d.id) as sources_count
+            FROM devices d
+            ORDER BY d.id DESC
+        """)
         devices = [dict(r) for r in cursor.fetchall()]
 
         return {
             "total_devices": total_devices,
             "active_devices": active_devices,
+            "disabled_devices": disabled_devices,
             "total_sources": total_sources,
             "active_sessions": active_sessions,
             "recent_logs": logs,
             "devices": devices
         }
+
+
+def set_device_status(device_id: int, status: str) -> bool:
+    """Updates device status ('active', 'disabled', 'suspended'). Revokes sessions if disabled."""
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, device_code, status FROM devices WHERE id = ?", (device_id,))
+        dev = cursor.fetchone()
+        if not dev:
+            return False
+
+        if status in ("disabled", "suspended", "blocked", "unlinked"):
+            cursor.execute("""
+                UPDATE device_sessions 
+                SET revoked_at = ? 
+                WHERE device_id = ? AND revoked_at IS NULL
+            """, (now, device_id))
+
+        cursor.execute("""
+            UPDATE devices 
+            SET status = ?, sync_version = sync_version + 1, updated_at = ? 
+            WHERE id = ?
+        """, (status, now, device_id))
+        conn.commit()
+
+    log_audit("admin", "1", f"device_status_{status}", "device", str(device_id), {
+        "mac": dev["device_code"],
+        "new_status": status
+    })
+    return True
+
+
+def delete_device(device_id: int) -> bool:
+    """Completely deletes a device and all its associated sources, sessions, and pins."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT device_code FROM devices WHERE id = ?", (device_id,))
+        dev = cursor.fetchone()
+        if not dev:
+            return False
+        mac = dev["device_code"]
+
+        cursor.execute("DELETE FROM iptv_sources WHERE device_id = ?", (device_id,))
+        cursor.execute("DELETE FROM device_sessions WHERE device_id = ?", (device_id,))
+        cursor.execute("DELETE FROM device_pairing_codes WHERE device_id = ?", (device_id,))
+        cursor.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+        conn.commit()
+
+    log_audit("admin", "1", "device_deleted", "device", str(device_id), {"mac": mac})
+    return True
+
+
+def update_device_label(device_id: int, label: str) -> bool:
+    """Updates the device friendly label."""
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE devices SET device_label = ?, updated_at = ? WHERE id = ?", (label.strip(), now, device_id))
+        conn.commit()
+    return True
+
+
+def clear_all_audit_logs() -> bool:
+    """Clears all entries from the audit_logs table."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM audit_logs")
+        try:
+            conn.execute("DELETE FROM sqlite_sequence WHERE name = 'audit_logs'")
+        except Exception:
+            pass
+        conn.commit()
+    log_audit("admin", "1", "audit_logs_cleared", "audit_logs", "", {"note": "سجل التدقيق تم حذفه بالكامل بواسطة المشرف"})
+    return True
+
+
+def delete_audit_log(log_id: int) -> bool:
+    """Deletes a single audit log entry by ID."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM audit_logs WHERE id = ?", (log_id,))
+        conn.commit()
+    return True
+

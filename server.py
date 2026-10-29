@@ -374,6 +374,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                     "sources": []
                 })
 
+            if device.get("status") in ("disabled", "suspended", "blocked"):
+                return self.send_json(403, {
+                    "device_id": device["id"],
+                    "status": device["status"],
+                    "error": "تم إيقاف هذا الجهاز من قبل إدارة النظام",
+                    "sources": []
+                })
+
             # Strictly return ONLY sources added for THIS specific device
             sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
             return self.send_json(200, {
@@ -457,6 +465,12 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(401, {
                     "success": False,
                     "error": "تعذر التحقق من الرموز. راجع القيم في تطبيق SADDAM IPTV وحاول مجددًا."
+                })
+
+            if device.get("status") in ("disabled", "suspended", "blocked"):
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "هذا الجهاز موقوف أو معطل حالياً من قبل إدارة النظام."
                 })
 
             # Success
@@ -620,6 +634,61 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             pin = db.create_or_rotate_pin(dev["id"])
             return self.send_json(201, {"success": True, "device": dev, "pin": pin})
 
+        # 12. Admin: Change Device Status (Active / Disabled / Suspended)
+        if path.startswith("/api/v1/admin/devices/") and path.endswith("/status"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            parts = path.split("/")
+            device_id = int(parts[5])
+            new_status = body.get("status", "").strip().lower()
+            if new_status not in ("active", "disabled", "suspended"):
+                return self.send_json(400, {"error": "الحالة المحددة غير صالحة (active, disabled, suspended)"})
+            ok = db.set_device_status(device_id, new_status)
+            if ok:
+                return self.send_json(200, {"success": True, "message": f"تم تغيير حالة الجهاز إلى {new_status}", "status": new_status})
+            return self.send_json(404, {"error": "الجهاز غير موجود"})
+
+        # 13. Admin: Update Device Label
+        if path.startswith("/api/v1/admin/devices/") and path.endswith("/label"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            parts = path.split("/")
+            device_id = int(parts[5])
+            label = body.get("label", "").strip()
+            ok = db.update_device_label(device_id, label)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم تحديث اسم الجهاز بنجاح"})
+            return self.send_json(404, {"error": "الجهاز غير موجود"})
+
+        # 14. Admin: Delete Device (POST alternative)
+        if path.startswith("/api/v1/admin/devices/") and path.endswith("/delete"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            parts = path.split("/")
+            device_id = int(parts[5])
+            ok = db.delete_device(device_id)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم حذف الجهاز وجميع مصادره بنجاح"})
+            return self.send_json(404, {"error": "الجهاز غير موجود"})
+
+        # 15. Admin: Clear All Audit Logs
+        if path in ("/api/v1/admin/audit-logs/clear", "/api/v1/admin/audit-logs"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            db.clear_all_audit_logs()
+            return self.send_json(200, {"success": True, "message": "تم مسح سجل التدقيق بالكامل بنجاح"})
+
+        # 16. Admin: Delete Single Audit Log
+        if path.startswith("/api/v1/admin/audit-logs/") and path.endswith("/delete"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            parts = path.split("/")
+            log_id = int(parts[5])
+            ok = db.delete_audit_log(log_id)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم حذف السجل المحدد بنجاح"})
+            return self.send_json(404, {"error": "السجل غير موجود"})
+
         self.send_json(404, {"error": "المسار غير موجود"})
 
     # ================= HTTP PUT Routing =================
@@ -654,6 +723,33 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             if ok:
                 return self.send_json(200, {"success": True, "message": "تم حذف المصدر بنجاح"})
             return self.send_json(404, {"success": False, "error": "المصدر غير موجود"})
+
+        # Admin: Delete Device
+        if path.startswith("/api/v1/admin/devices/"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            device_id = int(path.split("/")[5])
+            ok = db.delete_device(device_id)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم حذف الجهاز بنجاح"})
+            return self.send_json(404, {"error": "الجهاز غير موجود"})
+
+        # Admin: Clear Audit Logs
+        if path in ("/api/v1/admin/audit-logs", "/api/v1/admin/audit-logs/clear"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            db.clear_all_audit_logs()
+            return self.send_json(200, {"success": True, "message": "تم مسح سجل التدقيق بنجاح"})
+
+        # Admin: Delete Single Audit Log
+        if path.startswith("/api/v1/admin/audit-logs/"):
+            if not self.authenticate_admin():
+                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+            log_id = int(path.split("/")[5])
+            ok = db.delete_audit_log(log_id)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم حذف السجل بنجاح"})
+            return self.send_json(404, {"error": "السجل غير موجود"})
 
         self.send_json(404, {"error": "المسار غير موجود"})
 
