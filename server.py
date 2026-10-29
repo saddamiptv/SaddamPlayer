@@ -17,13 +17,161 @@ import os
 import sys
 import mimetypes
 import time
-from typing import Dict, Any, Optional
+import ssl
+from typing import Dict, Any, Optional, Tuple
 
 import database as db
 import security
 
 PORT = int(os.environ.get("PORT", 8080))
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "public")
+
+
+def probe_xtream_account(base_url: str, username: str, password: str, timeout: int = 8) -> Tuple[str, str, str]:
+    """
+    Probes an Xtream Codes server using player_api.php with credentials.
+    Returns: (status, error_code, message)
+      status: 'working' | 'auth_failed' | 'unavailable' | 'connection_failed'
+    """
+    try:
+        parsed = urllib.parse.urlparse(base_url.strip())
+        clean_base = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        api_url = f"{clean_base}/player_api.php?username={urllib.parse.quote(username)}&password={urllib.parse.quote(password)}"
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "User-Agent": "okhttp/4.9.2",
+                "Accept": "*/*",
+                "Connection": "close"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            if resp.getcode() == 200:
+                raw_bytes = resp.read(65536)
+                try:
+                    data = json.loads(raw_bytes.decode("utf-8", errors="ignore"))
+                    user_info = data.get("user_info", {})
+                    auth = user_info.get("auth")
+                    acc_status = str(user_info.get("status", "")).strip().lower()
+
+                    if auth == 1 or auth == "1" or auth is True:
+                        if acc_status in ("expired", "banned", "disabled"):
+                            return "unavailable", f"STATUS_{acc_status.upper()}", f"حساب Xtream غير نشط: الحالة ({acc_status})"
+
+                        exp = user_info.get("exp_date")
+                        msg = "تم التحقق من بيانات الدخول بنجاح والخادم يعمل بكفاءة"
+                        if exp and str(exp).isdigit() and int(exp) > 0:
+                            try:
+                                exp_str = time.strftime('%Y-%m-%d', time.localtime(int(exp)))
+                                msg += f" (صالح حتى {exp_str})"
+                            except Exception:
+                                pass
+                        return "working", "", msg
+                    else:
+                        return "auth_failed", "INVALID_CREDENTIALS", "بيانات الدخول غير صحيحة (اسم المستخدم أو كلمة المرور)"
+                except Exception:
+                    if len(raw_bytes) > 20:
+                        return "working", "", "تم الاتصال بالخادم بنجاح واستقبال البيانات"
+                    return "connection_failed", "INVALID_RESPONSE", "استجابة الخادم غير متوافقة مع واجهة Xtream"
+            return "connection_failed", f"HTTP {resp.getcode()}", f"أرجع الخادم رمز: {resp.getcode()}"
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return "auth_failed", f"HTTP {e.code}", "بيانات الدخول غير صحيحة أو تم رفض الاتصال بالخادم"
+        return "connection_failed", f"HTTP {e.code}", f"أرجع الخادم رمز خطأ: {e.code}"
+    except Exception as e:
+        return "connection_failed", "TIMEOUT_OR_UNREACHABLE", f"تعذر الاتصال بالخادم: {str(e)}"
+
+
+def probe_iptv_source(source: dict) -> Tuple[str, str, str]:
+    """
+    Intelligently probes any IPTV source (Xtream, M3U, M3U8, or hybrid).
+    Returns (status, error_code, message)
+    """
+    source_type = (source.get("source_type") or "m3u").lower()
+    server_url = (source.get("server_url") or "").strip()
+    username = (source.get("username") or "").strip()
+    password = (source.get("password_encrypted") or "").strip()
+
+    is_xtream = (source_type == "xtream")
+
+    # If it's an Xtream source or has username/password explicitly:
+    if is_xtream or (username and password and not (server_url.endswith(".m3u") or server_url.endswith(".m3u8"))):
+        return probe_xtream_account(server_url, username, password)
+
+    # For M3U source: check URL safety first
+    is_safe, msg = security.is_ssrf_safe_url(server_url)
+    if not is_safe:
+        return "unavailable", "SSRF_BLOCKED", msg
+
+    # Probe M3U directly with IPTV-compatible User-Agent and unverified SSL
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(
+        server_url,
+        headers={
+            "User-Agent": "okhttp/4.9.2",
+            "Accept": "*/*",
+            "Connection": "close"
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=7, context=ctx) as resp:
+            code = resp.getcode()
+            if code == 200:
+                head = resp.read(4096).decode("utf-8", errors="ignore")
+                if "#EXTM3U" in head or "#EXTINF" in head or len(head) > 20:
+                    return "working", "", "تم الاتصال بالمصدر بنجاح والقائمة صالحة"
+                return "working", "", "تم الاتصال بالرابط بنجاح"
+            elif code >= 400:
+                # Check if it was an Xtream URL before failing
+                parsed = urllib.parse.urlparse(server_url)
+                qs = urllib.parse.parse_qs(parsed.query)
+                if "username" in qs and "password" in qs:
+                    u = qs["username"][0].strip()
+                    p = qs["password"][0].strip()
+                    base = f"{parsed.scheme}://{parsed.netloc}"
+                    res_status, res_err, res_msg = probe_xtream_account(base, u, p)
+                    if res_status == "working":
+                        return "working", "", "تم الاتصال بالخادم بنجاح والتحقق من الحساب عبر Xtream API"
+                    return res_status, res_err, res_msg
+                return "connection_failed", f"HTTP {code}", f"أرجع الخادم رمز خطأ: {code}"
+    except urllib.error.HTTPError as e:
+        # Check if URL contains Xtream credentials (e.g. get.php where download is blocked with 885/403)
+        parsed = urllib.parse.urlparse(server_url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        if "username" in qs and "password" in qs:
+            u = qs["username"][0].strip()
+            p = qs["password"][0].strip()
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            res_status, res_err, res_msg = probe_xtream_account(base, u, p)
+            if res_status == "working":
+                return "working", "", "تم الاتصال بالخادم بنجاح والتحقق من الحساب عبر Xtream API"
+            return res_status, res_err, res_msg
+
+        if e.code in (401, 403):
+            return "auth_failed", f"HTTP {e.code}", "الرابط يتطلب مصادقة أو بيانات دخول صالحة"
+        return "connection_failed", f"HTTP {e.code}", f"فشل الاتصال بالرابط (رمز: {e.code})"
+    except Exception as e:
+        # Check if URL contains Xtream credentials
+        parsed = urllib.parse.urlparse(server_url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        if "username" in qs and "password" in qs:
+            u = qs["username"][0].strip()
+            p = qs["password"][0].strip()
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            res_status, res_err, res_msg = probe_xtream_account(base, u, p)
+            if res_status == "working":
+                return "working", "", "تم الاتصال بالخادم بنجاح والتحقق من الحساب عبر Xtream API"
+            return res_status, res_err, res_msg
+        return "connection_failed", "TIMEOUT_OR_UNREACHABLE", f"تعذر الاتصال بالرابط: {str(e)}"
 
 
 class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
@@ -142,7 +290,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             device = self.authenticate_device()
             if not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
-            sources = db.get_device_sources(device["id"], only_enabled=True)
+            sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
             return self.send_json(200, {
                 "success": True,
                 "device_id": device["id"],
@@ -226,7 +374,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                     "sources": []
                 })
 
-            sources = db.get_device_sources(device["id"], only_enabled=True)
+            sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
             return self.send_json(200, {
                 "device_id": device["id"],
                 "sync_version": device["sync_version"],
@@ -360,42 +508,22 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             if not source:
                 return self.send_json(404, {"success": False, "error": "المصدر غير موجود"})
 
-            target_url = source["server_url"]
-            is_safe, msg = security.is_ssrf_safe_url(target_url)
-            if not is_safe:
-                db.update_source_status(source_id, "unavailable", msg)
-                return self.send_json(200, {"success": False, "status": "unavailable", "message": msg})
+            source_dict = dict(source)
+            test_status, error_code, message = probe_iptv_source(source_dict)
 
-            # Perform probe request safely with 4-second timeout
-            test_status = "working"
-            error_code = ""
-            message = "تم الاتصال بالمصدر بنجاح والقائمة صالحة"
-
-            try:
-                req = urllib.request.Request(
-                    target_url,
-                    headers={"User-Agent": "SADDAM-IPTV-Player/1.1 (Android TV)"}
-                )
-                with urllib.request.urlopen(req, timeout=4) as resp:
-                    code = resp.getcode()
-                    if code >= 400:
-                        test_status = "connection_failed"
-                        error_code = f"HTTP {code}"
-                        message = f"أرجع الخادم رمز خطأ: {code}"
-            except urllib.error.HTTPError as e:
-                if e.code in (401, 403):
-                    test_status = "auth_failed"
-                    error_code = f"HTTP {e.code}"
-                    message = "بيانات الدخول غير صحيحة أو غير مصرح بالوصول"
-                else:
-                    test_status = "connection_failed"
-                    error_code = f"HTTP {e.code}"
-                    message = f"فشل الاتصال بالخادم: {e.reason}"
-            except Exception as e:
-                # If network test fails (e.g. offline/demo mock), give informative status
-                test_status = "connection_failed"
-                error_code = "TIMEOUT_OR_UNREACHABLE"
-                message = f"تعذر الاتصال بالخادم: {str(e)}"
+            # If credentials were detected in M3U URL, auto-save them to DB so the Android client can also use Xtream API
+            if source_dict.get("source_type") == "m3u" and not source_dict.get("username"):
+                try:
+                    parsed_qs = urllib.parse.parse_qs(urllib.parse.urlparse(source_dict["server_url"]).query)
+                    if "username" in parsed_qs and "password" in parsed_qs:
+                        with db.get_db() as conn:
+                            conn.execute(
+                                "UPDATE iptv_sources SET username = ?, password_encrypted = ? WHERE id = ?",
+                                (parsed_qs["username"][0].strip(), parsed_qs["password"][0].strip(), source_id)
+                            )
+                            conn.commit()
+                except Exception:
+                    pass
 
             db.update_source_status(source_id, test_status, error_code)
             return self.send_json(200, {
@@ -442,14 +570,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             client_pin = body.get("pin")
             dev = db.register_or_get_device(mac, label, platform, app_version)
             if client_pin and len(str(client_pin).strip()) == 6 and str(client_pin).strip().isdigit():
-                pin = db.set_device_pin(dev["id"], str(client_pin).strip(), expiry_minutes=1440)
+                pin = db.set_device_pin(dev["id"], str(client_pin).strip(), expiry_minutes=52560000)
             else:
                 pin = db.create_or_rotate_pin(dev["id"])
             return self.send_json(201, {
                 "device_id": dev["id"],
                 "device_code": dev["device_code"],
                 "pairing_pin": pin,
-                "pin_expires_minutes": 1440
+                "pin_expires_minutes": None
             })
 
         # 8. Android App: Diagnostics

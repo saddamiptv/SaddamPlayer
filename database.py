@@ -13,6 +13,7 @@ import sqlite3
 import json
 import time
 import os
+import urllib.parse
 from typing import Optional, Dict, Any, List
 from security import hash_pin, verify_pin, hash_token, normalize_mac, generate_session_token
 
@@ -233,15 +234,15 @@ def register_or_get_device(mac: str, label: str = "Android Device", platform: st
             return new_row
 
 
-def create_or_rotate_pin(device_id: int, expiry_minutes: int = 60) -> str:
-    """Creates a new 6-digit PIN for device pairing (used by Android app or admin)."""
+def create_or_rotate_pin(device_id: int, expiry_minutes: int = 52560000) -> str:
+    """Creates a permanent 6-digit PIN for device pairing unique to this device."""
     from security import generate_device_pin
     pin = generate_device_pin()
     return set_device_pin(device_id, pin, expiry_minutes)
 
 
-def set_device_pin(device_id: int, pin: str, expiry_minutes: int = 1440) -> str:
-    """Sets or updates the pairing PIN for a device."""
+def set_device_pin(device_id: int, pin: str, expiry_minutes: int = 52560000) -> str:
+    """Sets the permanent pairing PIN for a device (never expires)."""
     pin_h = hash_pin(str(pin).strip())
     now = int(time.time())
     expires_at = now + (expiry_minutes * 60)
@@ -379,7 +380,7 @@ def unlink_device(device_id: int):
 
 # IPTV Sources Management
 
-def get_device_sources(device_id: int, only_enabled: bool = False) -> List[Dict[str, Any]]:
+def get_device_sources(device_id: int, only_enabled: bool = False, mask_password: bool = True) -> List[Dict[str, Any]]:
     """Retrieves all IPTV sources for a device."""
     with get_db() as conn:
         cursor = conn.cursor()
@@ -391,12 +392,16 @@ def get_device_sources(device_id: int, only_enabled: bool = False) -> List[Dict[
         result = []
         for r in rows:
             d = dict(r)
-            # Mask password for frontend
-            if d.get('password_encrypted'):
-                d['has_password'] = True
-                d['password_encrypted'] = "••••••••"
+            d['is_enabled'] = d.get('enabled', 1)
+            # Mask password for web frontend, but preserve for Android client
+            raw_pwd = d.get('password_encrypted') or ""
+            d['has_password'] = bool(raw_pwd)
+            if mask_password:
+                if raw_pwd:
+                    d['password_encrypted'] = "••••••••"
             else:
-                d['has_password'] = False
+                d['password'] = raw_pwd
+                d['password_encrypted'] = raw_pwd
             result.append(d)
         return result
 
@@ -408,9 +413,24 @@ def add_iptv_source(device_id: int, data: dict) -> Dict[str, Any]:
     source_type = data.get("source_type", "m3u").lower()
     server_url = data.get("server_url", "").strip()
     username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
+    password = (data.get("password") or data.get("password_encrypted") or "").strip()
     description = data.get("description", "").strip()
     enabled = 1 if data.get("enabled", True) else 0
+
+    # Auto-extract and normalize credentials and server URL
+    try:
+        parsed = urllib.parse.urlparse(server_url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        if not username and "username" in qs:
+            username = qs["username"][0].strip()
+        if not password and "password" in qs:
+            password = qs["password"][0].strip()
+
+        # If Xtream source, clean base URL (strip /player_api.php, /get.php, query params, trailing slashes)
+        if source_type == "xtream" and parsed.scheme and parsed.netloc:
+            server_url = f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        pass
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -436,7 +456,7 @@ def update_iptv_source(source_id: int, device_id: int, data: dict) -> Optional[D
     name = data.get("name", "").strip()
     server_url = data.get("server_url", "").strip()
     username = data.get("username", "").strip()
-    new_password = data.get("password", "")
+    new_password = data.get("password") or data.get("password_encrypted") or ""
     description = data.get("description", "").strip()
     enabled = 1 if data.get("enabled", True) else 0
 
@@ -446,6 +466,19 @@ def update_iptv_source(source_id: int, device_id: int, data: dict) -> Optional[D
         existing = cursor.fetchone()
         if not existing:
             return None
+
+        # Auto-extract credentials if present in server_url
+        try:
+            parsed = urllib.parse.urlparse(server_url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if not username and "username" in qs:
+                username = qs["username"][0].strip()
+            if (not new_password or new_password == "••••••••") and "password" in qs:
+                new_password = qs["password"][0].strip()
+            if existing["source_type"] == "xtream" and parsed.scheme and parsed.netloc:
+                server_url = f"{parsed.scheme}://{parsed.netloc}"
+        except Exception:
+            pass
 
         if new_password and new_password.strip() and new_password != "••••••••":
             pwd_to_store = new_password.strip()

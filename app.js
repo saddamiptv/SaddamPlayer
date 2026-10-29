@@ -558,12 +558,38 @@ async function handleSaveSource(e) {
   setButtonLoading(btn, true, 'جارٍ الحفظ...');
 
   const isXtream = DOM.tabOptionXtream.classList.contains('active');
+  let name = DOM.sourceNameInput.value.trim();
+  let server_url = isXtream ? DOM.xtreamServerInput.value.trim() : DOM.sourceUrlInput.value.trim();
+  let username = isXtream ? DOM.xtreamUserInput.value.trim() : '';
+  let password = isXtream ? DOM.xtreamPassInput.value.trim() : '';
+
+  // Smart extraction: If M3U contains Xtream parameters, extract credentials
+  if (!isXtream && !username && server_url.includes('username=') && server_url.includes('password=')) {
+    try {
+      const u = new URL(server_url);
+      const uVal = u.searchParams.get('username');
+      const pVal = u.searchParams.get('password');
+      if (uVal) username = uVal.trim();
+      if (pVal) password = pVal.trim();
+    } catch(e) {}
+  }
+
+  // If Xtream server URL contains query or extra path, clean it
+  if (isXtream && server_url) {
+    try {
+      const u = new URL(server_url);
+      server_url = `${u.protocol}//${u.host}`;
+      if (!username && u.searchParams.get('username')) username = u.searchParams.get('username').trim();
+      if (!password && u.searchParams.get('password')) password = u.searchParams.get('password').trim();
+    } catch(e) {}
+  }
+
   const payload = {
-    name: DOM.sourceNameInput.value.trim(),
+    name,
     source_type: isXtream ? 'xtream' : 'm3u',
-    server_url: isXtream ? DOM.xtreamServerInput.value.trim() : DOM.sourceUrlInput.value.trim(),
-    username: isXtream ? DOM.xtreamUserInput.value.trim() : '',
-    password: isXtream ? DOM.xtreamPassInput.value.trim() : '',
+    server_url,
+    username,
+    password,
     description: DOM.sourceDescInput.value.trim(),
     enabled: DOM.sourceEnabledCheckbox.checked
   };
@@ -639,6 +665,9 @@ async function testSourceConnection(id) {
       }
       renderSources();
       updateStats();
+      if (data.message) {
+        alert(data.message);
+      }
     }
   } catch (err) {
     console.error('Test error:', err);
