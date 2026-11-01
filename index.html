@@ -10,8 +10,8 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
 
-  <title>SADDAM IPTV - بوابة إدارة الأجهزة وقوائم التشغيل</title>
-  <meta name="description" content="البوابة الإدارية الرسمية لتطبيق SADDAM IPTV لإدارة أجهزة المشتركين وقوائم التشغيل المرتبطة">
+  <title>SADDAM IPTV - بوابة ربط الأجهزة ومصادر البث</title>
+  <meta name="description" content="البوابة الرسمية لتطبيق SADDAM IPTV لإدارة أجهزة البث وإضافة مصادر M3U و Xtream Codes مباشرة.">
   <link rel="icon" type="image/png" href="logo.png">
 
   <!-- Google Fonts: Cairo & Outfit -->
@@ -22,219 +22,191 @@
   <!-- FontAwesome 6 Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-  <!-- High-Performance Design System (Optimized for Old Devices) -->
+  <!-- High-Performance Design System -->
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-  <!-- ================= Header ================= -->
+  <!-- Site Header -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="index.html" class="brand-link" id="brandHomeLink">
+      <a href="index.html" class="brand-link">
         <img src="logo.png" alt="SADDAM IPTV Logo" class="brand-logo-img">
         <div class="brand-title">
           <span>SADDAM</span>
           <span class="gradient-text">IPTV</span>
-          <span class="brand-badge admin">PORTAL</span>
+          <span class="brand-badge">PORTAL</span>
         </div>
       </a>
 
       <div class="header-actions">
-        <!-- Logged-in Admin Pill (Visible when authenticated) -->
-        <div id="adminSlotBadge" class="admin-slot-pill hidden">
-          <i class="fa-solid fa-user-shield" style="color: var(--primary);"></i>
-          <span id="adminSlotText" style="font-weight: 700;">مشرف</span>
+        <!-- Device Info Badge (Shown only when device is paired) -->
+        <div id="headerDeviceBadge" class="admin-slot-pill hidden">
+          <i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+          <span id="deviceMacMasked" class="latin-code" style="font-weight: 700; color: #fff;"></span>
         </div>
 
-        <!-- Logout Button (Visible when authenticated) -->
-        <button id="btnAdminLogout" class="btn btn-danger btn-sm hidden" title="تسجيل الخروج وإنهاء الجلسة">
+        <!-- Logout / Disconnect Button (Shown only when device is paired) -->
+        <button id="btnLogout" class="btn btn-danger btn-sm hidden" title="إنهاء الجلسة">
           <i class="fa-solid fa-power-off"></i>
           <span>خروج</span>
         </button>
+
+        <!-- Clearly Visible Admin Button at the Top of the Main Page -->
+        <a href="admin.html" id="btnAdminAccess" class="btn btn-primary btn-sm" title="لوحة الإدارة">
+          <i class="fa-solid fa-user-shield"></i>
+          <span>Admin</span>
+        </a>
       </div>
     </div>
   </header>
 
-  <!-- ================= Main Content Container ================= -->
+  <!-- Main Content Area -->
   <main style="flex: 1; padding: 24px 0;">
     <div class="container">
 
-      <!-- ================= View 1: Administrator Login Screen ================= -->
-      <section id="loginView" class="auth-wrapper">
+      <!-- ====================================================================
+           PAGE: DEVICE PAIRING LOGIN (Default Landing Page)
+           ==================================================================== -->
+      <section id="pairingSection" class="auth-wrapper">
         <div class="auth-card">
           <div class="auth-header">
             <img src="logo.png" alt="SADDAM IPTV Logo" class="auth-logo">
-            <h1 class="auth-title">لوحة المشرفين <span class="gradient-text">المعتمدين</span></h1>
-            <p class="auth-subtitle">سجل الدخول باستخدام أحد الحسابين الإداريين المعتمدين للوصول إلى إدارة أجهزة المشتركين وقوائم التشغيل</p>
+            <h1 class="auth-title">ربط <span class="gradient-text">جهازك</span></h1>
+            <p class="auth-subtitle">
+              أدخل رمز <strong>MAC</strong> وكود <strong>PIN</strong> الظاهرين في تطبيق SADDAM IPTV على شاشتك للمتابعة وإدارة مصادر البث.
+            </p>
           </div>
 
           <!-- Alert Container -->
-          <div id="loginAlert" class="alert-box hidden"></div>
+          <div id="pairingAlert" class="alert-box hidden"></div>
 
-          <!-- Login Form (No registration, no password reset) -->
-          <form id="unifiedLoginForm">
+          <!-- Direct Pairing Form -->
+          <form id="pairingForm">
             <div class="form-group">
-              <label class="form-label" for="usernameInput">اسم المستخدم الإداري</label>
+              <label class="form-label" for="macInput">
+                <span>رمز الجهاز (MAC Code)</span>
+                <span class="form-label-hint open-help-modal">أين أجد الرمز؟</span>
+              </label>
               <div class="input-wrapper">
-                <input type="text" id="usernameInput" class="form-input" placeholder="أدخل اسم المستخدم (Drexx0301 أو Saddam1991)" autocomplete="username" required>
+                <input 
+                  type="text" 
+                  id="macInput" 
+                  class="form-input code-style" 
+                  placeholder="AA:BB:CC:11:22:33" 
+                  maxlength="17" 
+                  autocomplete="off" 
+                  spellcheck="false" 
+                  required
+                >
               </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="passwordInput">كلمة المرور</label>
+              <label class="form-label" for="pinInput">
+                <span>رمز PIN (6 أرقام)</span>
+              </label>
               <div class="input-wrapper">
-                <input type="password" id="passwordInput" class="form-input" placeholder="كلمة المرور الخاصة بالحساب" autocomplete="current-password" required>
-                <button type="button" id="togglePasswordBtn" class="password-toggle-btn" title="إظهار / إخفاء كلمة المرور">
-                  <i class="fa-solid fa-eye" id="togglePasswordIcon"></i>
+                <input 
+                  type="password" 
+                  id="pinInput" 
+                  class="form-input code-style" 
+                  placeholder="••••••" 
+                  maxlength="6" 
+                  pattern="[0-9]{6}" 
+                  inputmode="numeric" 
+                  autocomplete="off" 
+                  required
+                >
+                <button type="button" id="togglePinVisibility" class="password-toggle-btn" title="إظهار / إخفاء الرمز">
+                  <i class="fa-solid fa-eye" id="pinEyeIcon"></i>
                 </button>
               </div>
             </div>
 
-            <button type="submit" id="btnLoginSubmit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
-              <span id="loginBtnText">تسجيل الدخول للموقع</span>
+            <button type="submit" id="btnPair" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
+              <span id="btnPairText">التحقق وربط الجهاز</span>
               <i class="fa-solid fa-arrow-left"></i>
             </button>
           </form>
-
-          <div class="auth-switch-mode">
-            <span>التحكم في الموقع محمي ومقتصر حصراً على الحسابين الإداريين المعتمدين.</span>
-          </div>
         </div>
       </section>
 
-      <!-- ================= View 2: Screen A — Device Identification ================= -->
-      <section id="deviceIdentificationView" class="auth-wrapper hidden">
-        <div class="auth-card" style="max-width: 520px;">
-          <div class="auth-header">
-            <div class="device-banner-icon" style="margin: 0 auto 14px; width: 56px; height: 56px; font-size: 1.6rem;">
-              <i class="fa-solid fa-microchip"></i>
-            </div>
-            <h1 class="auth-title">التحقق من <span class="gradient-text">جهاز المشترك</span></h1>
-            <p class="auth-subtitle">أدخل عنوان MAC ومفتاح الجهاز (Device Key) للوصول إلى قوائم التشغيل الخاصة بهذا الجهاز وإدارتها</p>
-          </div>
-
-          <!-- Device Validation Alert -->
-          <div id="deviceAlert" class="alert-box hidden"></div>
-
-          <!-- Device Identification Form -->
-          <form id="deviceIdentificationForm">
-            <div class="form-group">
-              <label class="form-label" for="macAddressInput">كود الجهاز (MAC Address)</label>
-              <div class="input-wrapper">
-                <input type="text" id="macAddressInput" class="form-input code-style" placeholder="AA:BB:CC:11:22:33" maxlength="17" autocomplete="off" required>
+      <!-- ====================================================================
+           PAIRED DEVICE DASHBOARD (Manage Playlists for This Device)
+           ==================================================================== -->
+      <section id="dashboardSection" class="hidden">
+        
+        <!-- Device Quick Info Card -->
+        <div class="content-card">
+          <div class="flex-between">
+            <div>
+              <h2 id="deviceLabel" style="font-size: 1.2rem; color: #fff; margin-bottom: 4px;">جهاز التلفاز</h2>
+              <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap;">
+                <span>MAC: <strong id="deviceMacFull" class="latin-code" style="color: #fff;">-</strong></span>
+                <span>المنصة: <strong id="devicePlatform">-</strong></span>
+                <span>المزامنة: <strong id="deviceSyncVersion" class="latin-code" style="color: var(--primary);">v1</strong></span>
               </div>
-              <span style="font-size: 0.78rem; color: var(--text-dim); display: block; margin-top: 4px;">عنوان MAC الظاهر على شاشة تطبيق SADDAM IPTV</span>
             </div>
-
-            <div class="form-group">
-              <label class="form-label" for="deviceKeyInput">مفتاح الجهاز (Device Key)</label>
-              <div class="input-wrapper">
-                <input type="password" id="deviceKeyInput" class="form-input code-style" placeholder="كود PIN المكون من 6 أرقام" maxlength="32" autocomplete="off" required>
-                <button type="button" id="toggleKeyVisibilityBtn" class="password-toggle-btn" title="إظهار / إخفاء مفتاح الجهاز">
-                  <i class="fa-solid fa-eye" id="toggleKeyIcon"></i>
-                </button>
-              </div>
-              <span style="font-size: 0.78rem; color: var(--text-dim); display: block; margin-top: 4px;">كود PIN الخاص بالجهاز الظاهر في تطبيق المشترك</span>
-            </div>
-
-            <div style="display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;">
-              <button type="submit" id="btnConnectDevice" class="btn btn-primary btn-lg" style="flex: 2; min-width: 180px;">
-                <i class="fa-solid fa-link" id="connectBtnIcon"></i>
-                <span id="connectBtnText">اتصال وتحميل قوائم الجهاز</span>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnOpenAddSource" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-plus"></i> إضافة قائمة جديدة
               </button>
-
-              <button type="button" id="btnClearDeviceForm" class="btn btn-secondary btn-lg" style="flex: 1;" title="مسح الحقول">
-                <i class="fa-solid fa-eraser"></i>
-                <span>مسح</span>
+              <button id="btnUnlink" class="btn btn-secondary btn-sm" title="إلغاء ربط هذا الجهاز">
+                <i class="fa-solid fa-link-slash"></i> إلغاء الربط
               </button>
             </div>
-          </form>
+          </div>
         </div>
-      </section>
 
-      <!-- ================= View 3: Screen B — Device Playlist Management ================= -->
-      <section id="playlistManagementView" class="hidden">
-
-        <!-- Top Device Info Banner -->
-        <div class="device-banner">
-          <div class="device-banner-main">
-            <div class="device-banner-icon">
-              <i class="fa-solid fa-tv"></i>
+        <!-- Sources Overview Stats -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>إجمالي القوائم</h3>
+              <div class="stat-number" id="statTotalSources">0</div>
             </div>
-            <div class="device-banner-details">
-              <h2>
-                <span>الجهاز:</span>
-                <span id="currentDeviceMac" class="latin-code" style="color: var(--primary);">--:--:--:--:--:--</span>
-                <button class="btn btn-secondary btn-sm" id="btnCopyMac" title="نسخ عنوان MAC" style="padding: 2px 8px; min-height: 26px;">
-                  <i class="fa-regular fa-copy"></i>
-                </button>
-              </h2>
-              <div class="device-banner-badges">
-                <span><i class="fa-solid fa-laptop"></i> <span id="currentDevicePlatform">Android TV</span></span>
-                <span>•</span>
-                <span id="currentDeviceStatusBadge" class="badge badge-success">نشط</span>
-                <span>•</span>
-                <span>إصدار المزامنة: <strong id="currentDeviceSync" class="latin-code" style="color: #fff;">v1</strong></span>
-              </div>
+            <div class="stat-icon"><i class="fa-solid fa-list-check"></i></div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>القوائم المفعلة</h3>
+              <div class="stat-number" id="statActiveSources" style="color: var(--success);">0</div>
+            </div>
+            <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-info">
+              <h3>القوائم الصالحة</h3>
+              <div class="stat-number" id="statWorkingSources" style="color: var(--primary);">0</div>
+            </div>
+            <div class="stat-icon purple"><i class="fa-solid fa-signal"></i></div>
+          </div>
+        </div>
+
+        <!-- Playlists List Card -->
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2 class="card-title">
+              <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
+              <span>قوائم التشغيل المرتبطة بالجهاز</span>
+            </h2>
+
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="sourceSearchInput" class="form-input" placeholder="بحث في القوائم..." style="width: 180px; min-height: 36px; padding: 6px 10px; font-size: 0.85rem;">
+              <select id="sourceFilterSelect" class="form-input" style="width: 120px; min-height: 36px; padding: 6px 8px; font-size: 0.85rem;">
+                <option value="all">الكل</option>
+                <option value="active">المفعلة</option>
+                <option value="disabled">المعطلة</option>
+              </select>
             </div>
           </div>
 
-          <div class="device-banner-actions">
-            <!-- Change Device Button (Returns to Screen A and clears device context) -->
-            <button id="btnChangeDevice" class="btn btn-secondary" title="الرجوع واختيار جهاز آخر">
-              <i class="fa-solid fa-arrow-right"></i>
-              <span>تغيير الجهاز</span>
-            </button>
-
-            <!-- Refresh / Sync Button -->
-            <button id="btnSyncPlaylists" class="btn btn-secondary" title="تحديث قوائم التشغيل من الخادم">
-              <i class="fa-solid fa-rotate" id="syncIcon"></i>
-              <span>تحديث</span>
-            </button>
-
-            <!-- Add Playlist Action Button -->
-            <button id="btnOpenAddSourceModal" class="btn btn-primary" title="إضافة قائمة تشغيل جديدة لهذا الجهاز">
-              <i class="fa-solid fa-plus-circle"></i>
-              <span>إضافة قائمة تشغيل</span>
-            </button>
+          <div id="sourcesContainer">
+            <!-- Populated dynamically -->
           </div>
-        </div>
-
-        <!-- Playlists Summary Bar -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
-          <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-            <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
-            <span>قوائم تشغيل IPTV المرتبطة بهذا الجهاز</span>
-          </h3>
-
-          <div style="display: flex; gap: 8px; align-items: center; font-size: 0.85rem;">
-            <span class="badge badge-info"><span id="playlistsTotalCount">0</span> قوائم إجمالاً</span>
-            <span class="badge badge-success"><span id="playlistsActiveCount">0</span> مفعلة</span>
-            <span class="badge badge-warning"><span id="playlistsDisabledCount">0</span> معطلة</span>
-          </div>
-        </div>
-
-        <!-- Playlists Status Alert -->
-        <div id="playlistsAlert" class="alert-box hidden"></div>
-
-        <!-- Empty State Container (Visible when device has 0 playlists) -->
-        <div id="emptyPlaylistsState" class="empty-state-card hidden">
-          <div class="empty-state-icon">
-            <i class="fa-solid fa-satellite-dish"></i>
-          </div>
-          <h3 class="empty-state-title">لا توجد قوائم تشغيل مرتبطة بهذا الجهاز حالياً</h3>
-          <p class="empty-state-desc">
-            هذا الجهاز غير مرتبط بأي اشتراك أو قائمة قنوات حتى الآن. اضغط على الزر أدناه لإضافة قائمة تشغيل جديدة (M3U أو Xtream Codes).
-          </p>
-          <button class="btn btn-primary btn-lg" onclick="openAddSourceModal()">
-            <i class="fa-solid fa-plus-circle"></i>
-            <span>إضافة قائمة تشغيل للجهاز</span>
-          </button>
-        </div>
-
-        <!-- Playlists Cards Container (Populated dynamically) -->
-        <div id="playlistsGrid" class="playlist-grid">
-          <!-- Playlist items injected here -->
         </div>
 
       </section>
@@ -242,127 +214,80 @@
     </div>
   </main>
 
-  <!-- ================= Modal 1: Add Playlist / Source ================= -->
-  <div id="addSourceModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 620px;">
+  <!-- Help Modal -->
+  <div id="modalHelp" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-plus-circle" style="color: var(--primary);"></i>
-          <span>إضافة قائمة تشغيل جديدة للجهاز</span>
-        </h3>
-        <button class="modal-close-btn" onclick="closeAddSourceModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <h3 class="card-title">أين أجد كود MAC و PIN؟</h3>
+        <button class="modal-close-btn" id="closeHelpModal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-muted);">
+        1. افتح تطبيق <strong>SADDAM IPTV</strong> على جهاز التلفاز أو هاتفك.<br>
+        2. ستظهر لك شاشة الربط أو شاشة الإعدادات.<br>
+        3. يظهر كود الـ <strong>MAC</strong> وكود <strong>PIN</strong> بوضوح في أسفل الشاشة.<br>
+        4. أدخل الرمزين في هذه الصفحة للمتابعة والتحكم في قنواتك.
+      </p>
+    </div>
+  </div>
+
+  <!-- Add / Edit Source Modal -->
+  <div id="modalSource" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="card-title" id="sourceModalTitle">إضافة قائمة جديدة</h3>
+        <button class="modal-close-btn" id="closeSourceModal"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
-      <div id="addSourceAlert" class="alert-box hidden"></div>
+      <div id="modalSourceAlert" class="alert-box hidden"></div>
 
-      <form id="addSourceForm">
-        <div class="form-group">
-          <label class="form-label" for="addSourceName">اسم القائمة أو الباقة</label>
-          <input type="text" id="addSourceName" class="form-input" placeholder="مثال: باقة القنوات العربية والأفلام VIP" required>
+      <form id="sourceForm">
+        <!-- Tabs for M3U vs Xtream -->
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button type="button" id="tabOptionM3u" class="btn btn-secondary btn-sm" style="flex: 1; border-color: var(--primary);">قائمة M3U / M3U8</button>
+          <button type="button" id="tabOptionXtream" class="btn btn-secondary btn-sm" style="flex: 1;">خادم Xtream Codes</button>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="addSourceType">نوع المصدر</label>
-          <select id="addSourceType" class="form-input" onchange="handleAddSourceTypeChange()">
-            <option value="m3u">رابط قائمة مباشر (M3U / M3U8)</option>
-            <option value="xtream">خادم Xtream Codes API</option>
-          </select>
+          <label class="form-label" for="sourceNameInput">اسم القائمة</label>
+          <input type="text" id="sourceNameInput" class="form-input" placeholder="مثال: قنوات الرياضة والأفلام" required>
         </div>
 
-        <div class="form-group">
-          <label class="form-label" for="addSourceUrl">رابط السيرفر أو القائمة (URL)</label>
-          <input type="url" id="addSourceUrl" class="form-input latin-code" placeholder="http://example.com:8080 أو رابط m3u" required>
-        </div>
-
-        <div id="addXtreamFields" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
-          <div>
-            <label class="form-label" for="addSourceUser">اسم المستخدم (Xtream)</label>
-            <input type="text" id="addSourceUser" class="form-input latin-code" placeholder="Username">
-          </div>
-          <div>
-            <label class="form-label" for="addSourcePass">كلمة المرور (Xtream)</label>
-            <input type="password" id="addSourcePass" class="form-input latin-code" placeholder="Password">
+        <!-- M3U Fields -->
+        <div id="m3uFields">
+          <div class="form-group">
+            <label class="form-label" for="sourceUrlInput">رابط قائمة M3U / M3U8</label>
+            <input type="url" id="sourceUrlInput" class="form-input latin-code" placeholder="https://example.com/playlist.m3u">
           </div>
         </div>
 
-        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-          <button type="button" class="btn btn-secondary" onclick="closeAddSourceModal()">إلغاء</button>
-          <button type="submit" id="btnAddSourceSubmit" class="btn btn-primary">
-            <i class="fa-solid fa-cloud-arrow-up"></i>
-            <span>حفظ وإضافة القائمة للجهاز</span>
+        <!-- Xtream Fields -->
+        <div id="xtreamFields" class="hidden">
+          <div class="form-group">
+            <label class="form-label" for="xtreamServerInput">عنوان السيرفر (Server URL)</label>
+            <input type="url" id="xtreamServerInput" class="form-input latin-code" placeholder="http://example.com:8080">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label class="form-label" for="xtreamUserInput">اسم المستخدم</label>
+              <input type="text" id="xtreamUserInput" class="form-input latin-code" placeholder="Username">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="xtreamPassInput">كلمة المرور</label>
+              <input type="password" id="xtreamPassInput" class="form-input latin-code" placeholder="Password">
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 16px;">
+          <button type="submit" id="btnSaveSource" class="btn btn-primary" style="flex: 1;">
+            <span>حفظ القائمة</span>
           </button>
+          <button type="button" class="btn btn-secondary" id="cancelSourceModalBtn">إلغاء</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- ================= Modal 2: Edit Playlist / Source ================= -->
-  <div id="editSourceModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 620px;">
-      <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i>
-          <span>تعديل قائمة التشغيل</span>
-        </h3>
-        <button class="modal-close-btn" onclick="closeEditSourceModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-
-      <div id="editSourceAlert" class="alert-box hidden"></div>
-
-      <form id="editSourceForm">
-        <input type="hidden" id="editSourceId">
-
-        <div class="form-group">
-          <label class="form-label" for="editSourceName">اسم القائمة أو الباقة</label>
-          <input type="text" id="editSourceName" class="form-input" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="editSourceType">نوع المصدر</label>
-          <select id="editSourceType" class="form-input" onchange="handleEditSourceTypeChange()">
-            <option value="m3u">رابط قائمة مباشر (M3U / M3U8)</option>
-            <option value="xtream">خادم Xtream Codes API</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="editSourceUrl">رابط السيرفر أو القائمة (URL)</label>
-          <input type="url" id="editSourceUrl" class="form-input latin-code" required>
-        </div>
-
-        <div id="editXtreamFields" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
-          <div>
-            <label class="form-label" for="editSourceUser">اسم المستخدم (Xtream)</label>
-            <input type="text" id="editSourceUser" class="form-input latin-code">
-          </div>
-          <div>
-            <label class="form-label" for="editSourcePass">كلمة المرور (Xtream)</label>
-            <input type="password" id="editSourcePass" class="form-input latin-code" placeholder="اترك فارغاً للإبقاء على الحالية">
-          </div>
-        </div>
-
-        <div class="form-group" style="margin-top: 12px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #fff; font-size: 0.9rem;">
-            <input type="checkbox" id="editSourceEnabled" style="width: 18px; height: 18px; accent-color: var(--primary);">
-            <span>تفعيل هذه القائمة على الجهاز (متاحة للمشترك)</span>
-          </label>
-        </div>
-
-        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-          <button type="button" class="btn btn-secondary" onclick="closeEditSourceModal()">إلغاء</button>
-          <button type="submit" id="btnEditSourceSubmit" class="btn btn-primary">
-            <i class="fa-solid fa-floppy-disk"></i>
-            <span>حفظ التعديلات</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <script src="admin.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

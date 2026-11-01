@@ -4,11 +4,8 @@
  * Direct Pairing -> Session -> Source Management -> Android Sync
  */
 
-// Configuration & API Base
-const API_BASE = window.SADDAM_API_BASE || 
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? '' 
-    : 'https://saddamplayer.onrender.com');
+// Configuration & API Base (Use relative paths to seamlessly support localhost, LAN IP, and domain)
+const API_BASE = window.SADDAM_API_BASE || '';
 
 // Application State
 const state = {
@@ -311,7 +308,7 @@ async function checkExistingSession() {
 
   // Check if device session exists
   if (!state.token) {
-    showLoginView();
+    showPairingView();
     return;
   }
 
@@ -326,10 +323,10 @@ async function checkExistingSession() {
       await loadSources();
     } else {
       clearSession();
-      showLoginView();
+      showPairingView();
     }
   } catch (err) {
-    showLoginView();
+    showPairingView();
   }
 }
 

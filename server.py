@@ -559,6 +559,18 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             result = db.get_audit_logs_paginated(search, page, limit)
             return self.send_json(200, {"success": True, "data": result})
 
+        # 9b. API: Admin Paginated Playlists Across All Devices (SPD Sec 3.3)
+        if path == "/api/v1/admin/sources":
+            if not self.authenticate_admin():
+                return self.send_json(401, {"success": False, "error": "غير مصرح"})
+            search = query.get("search", [""])[0]
+            source_type = query.get("type", [""])[0]
+            status = query.get("status", [""])[0]
+            page = int(query.get("page", ["1"])[0])
+            limit = int(query.get("limit", ["15"])[0])
+            result = db.get_all_sources_paginated(search, source_type, status, page, limit)
+            return self.send_json(200, {"success": True, "data": result})
+
         # 10. Static files
         self.serve_static(path)
 
@@ -884,17 +896,17 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             }, cookies={"saddam_admin_session": "deleted; Max-Age=0"})
 
         # 9c. Admin Account Update (SPD Sec 9 - Password update with current password check)
-        if path == "/api/v1/auth/update-account":
+        if path in ("/api/v1/auth/update-account", "/api/v1/admin/update-credentials"):
             admin_sess = self.authenticate_admin()
             if not admin_sess:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
 
             current_pwd = body.get("current_password", "").strip()
-            new_user = body.get("new_username", "").strip()
+            new_user = body.get("new_username", "").strip() or admin_sess["username"]
             new_pwd = body.get("new_password", "").strip()
 
-            if not current_pwd or not new_user or not new_pwd:
-                return self.send_json(400, {"success": False, "error": "جميع الحقول مطلوبة"})
+            if not current_pwd or not new_pwd:
+                return self.send_json(400, {"success": False, "error": "كلمة المرور الحالية وكلمة المرور الجديدة مطلوبتان"})
 
             # Verify current password
             cur_acc = db.verify_admin_credentials(admin_sess["username"], current_pwd)
@@ -923,6 +935,23 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             device_id = int(path.split("/")[5])
             new_pin = db.create_or_rotate_pin(device_id)
             return self.send_json(200, {"success": True, "new_pin": new_pin})
+
+        # 10_sync. Admin: Trigger Device Synchronization (SPD Sec 3.5)
+        if path.startswith("/api/v1/admin/devices/") and path.endswith("/sync"):
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
+                return self.send_json(401, {"success": False, "error": "تصريح المشرف مطلوب"})
+            device_id = int(path.split("/")[5])
+            sync_res = db.admin_sync_device(device_id)
+            if sync_res:
+                db.log_audit("admin", str(admin_sess["slot"]), "device_sync_triggered", "device", str(device_id), sync_res)
+                return self.send_json(200, {
+                    "success": True,
+                    "message": "تم إرسال طلب المزامنة للجهاز بنجاح",
+                    "sync_version": sync_res["sync_version"],
+                    "synced_at": sync_res["synced_at"]
+                })
+            return self.send_json(404, {"success": False, "error": "الجهاز غير موجود"})
 
         # 10b. Admin: Identify & Connect Device via MAC & Device Key (SPD Sec 7)
         if path in ("/api/v1/admin/devices/connect", "/api/v1/admin/devices/identify", "/api/v1/admin/devices/load"):

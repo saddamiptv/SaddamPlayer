@@ -1261,3 +1261,95 @@ def get_audit_logs_paginated(search: str = "", page: int = 1, limit: int = 15) -
             "limit": limit
         }
 
+
+def get_all_sources_paginated(search: str = "", source_type: str = "", status: str = "", page: int = 1, limit: int = 15) -> Dict[str, Any]:
+    """Retrieves all IPTV sources across devices with pagination, search, and filtering."""
+    page = max(1, int(page or 1))
+    limit = max(1, min(100, int(limit or 15)))
+    offset = (page - 1) * limit
+
+    conditions = []
+    params = []
+
+    if search:
+        st = f"%{search.strip()}%"
+        conditions.append("(s.name LIKE ? OR s.server_url LIKE ? OR d.device_code LIKE ? OR d.device_label LIKE ?)")
+        params.extend([st, st, st, st])
+
+    if source_type and source_type.lower() != "all":
+        conditions.append("s.source_type = ?")
+        params.append(source_type.lower())
+
+    if status and status.lower() != "all":
+        st_low = status.lower()
+        if st_low == "enabled":
+            conditions.append("s.enabled = 1")
+        elif st_low == "disabled":
+            conditions.append("s.enabled = 0")
+        else:
+            conditions.append("s.status = ?")
+            params.append(st_low)
+
+    where_clause = ""
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        count_sql = f"""
+            SELECT COUNT(*) as total
+            FROM iptv_sources s
+            LEFT JOIN devices d ON s.device_id = d.id
+            {where_clause}
+        """
+        cursor.execute(count_sql, params)
+        total = cursor.fetchone()["total"]
+
+        data_sql = f"""
+            SELECT s.*, d.device_code as device_mac, d.device_label, d.status as device_status
+            FROM iptv_sources s
+            LEFT JOIN devices d ON s.device_id = d.id
+            {where_clause}
+            ORDER BY s.id DESC
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(data_sql, params + [limit, offset])
+        sources = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            if d.get("password_encrypted"):
+                d["password_encrypted"] = "••••••••"
+            sources.append(d)
+
+        pages = max(1, (total + limit - 1) // limit)
+        return {
+            "sources": sources,
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "limit": limit
+        }
+
+
+def admin_sync_device(device_id: int) -> Optional[Dict[str, Any]]:
+    """Increments device sync_version and updates timestamp."""
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, device_code, sync_version FROM devices WHERE id = ?", (device_id,))
+        dev = cursor.fetchone()
+        if not dev:
+            return None
+        new_version = (dev["sync_version"] or 1) + 1
+        cursor.execute("""
+            UPDATE devices SET sync_version = ?, updated_at = ? WHERE id = ?
+        """, (new_version, now, device_id))
+        conn.commit()
+        return {
+            "device_id": device_id,
+            "device_code": dev["device_code"],
+            "sync_version": new_version,
+            "synced_at": now
+        }
+
+
