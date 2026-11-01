@@ -194,12 +194,17 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
-    # Helper: Send JSON response
+    # Helper: Send JSON response with mandatory security headers
     def send_json(self, status_code: int, data: Any, cookies: Optional[Dict[str, str]] = None):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         if cookies:
             for k, v in cookies.items():
                 self.send_header("Set-Cookie", f"{k}={v}; Path=/; HttpOnly; SameSite=Lax")
@@ -217,20 +222,41 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return {}
 
-    # Helper: Extract session token from Cookie or Bearer header
+    # Helper: Extract device session token
     def get_auth_token(self) -> Optional[str]:
-        # Check Authorization header: Bearer <token>
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             return auth_header[7:].strip()
 
-        # Check Cookie header: saddam_session=<token>
         cookie_header = self.headers.get("Cookie", "")
         if cookie_header:
             cookies = [c.strip() for c in cookie_header.split(";")]
             for c in cookies:
                 if c.startswith("saddam_session="):
                     return c.split("=", 1)[1].strip()
+
+        return None
+
+    # Helper: Extract Admin Session token
+    def get_admin_session_token(self) -> Optional[str]:
+        cookie_header = self.headers.get("Cookie", "")
+        if cookie_header:
+            cookies = [c.strip() for c in cookie_header.split(";")]
+            for c in cookies:
+                if c.startswith("saddam_admin_session="):
+                    return c.split("=", 1)[1].strip()
+
+        session_hdr = self.headers.get("X-Admin-Session", "").strip()
+        if session_hdr:
+            return session_hdr
+
+        auth_header = self.headers.get("Authorization", "").strip()
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:].strip()
+
+        admin_key_hdr = self.headers.get("X-Admin-Key", "").strip()
+        if admin_key_hdr:
+            return admin_key_hdr
 
         return None
 
@@ -241,14 +267,12 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             return None
         return db.validate_session_token(token)
 
-    # Helper: Authenticate Admin Session
-    def authenticate_admin(self) -> bool:
-        auth_header = self.headers.get("X-Admin-Key", "")
-        if not auth_header:
-            token = self.get_auth_token()
-            auth_header = token or ""
-        # Accept default admin token or key
-        return auth_header == "saddam_admin_secret_token_2026"
+    # Helper: Authenticate Administrator Session (Server-enforced, expiring, revocable)
+    def authenticate_admin(self) -> Optional[Dict[str, Any]]:
+        token = self.get_admin_session_token()
+        if not token:
+            return None
+        return db.validate_admin_session(token)
 
     # ================= HTTP GET Routing =================
     def do_GET(self):
@@ -469,14 +493,73 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 "timestamp": int(time.time())
             })
 
-        # 5. API: Admin Dashboard Stats
-        if path == "/api/v1/admin/stats":
-            if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
-            stats = db.get_admin_stats()
-            return self.send_json(200, {"success": True, "data": stats})
+        # 5. API: Auth Status & Accounts Overview (SPD Sec 4 & 5)
+        if path == "/api/v1/auth/status":
+            admin_sess = self.authenticate_admin()
+            is_configured = db.is_any_admin_configured()
+            slots = db.get_admin_slots_status()
+            return self.send_json(200, {
+                "success": True,
+                "authenticated": admin_sess is not None,
+                "admin": {
+                    "slot": admin_sess["slot"],
+                    "username": admin_sess["username"]
+                } if admin_sess else None,
+                "setup_needed": not is_configured,
+                "slots": slots
+            })
 
-        # 6. Static files
+        if path == "/api/v1/auth/accounts-overview":
+            return self.send_json(200, {
+                "success": True,
+                "slots": db.get_admin_slots_status(),
+                "setup_needed": not db.is_any_admin_configured()
+            })
+
+        # 6. API: Admin Dashboard Stats (SPD Sec 7.1)
+        if path == "/api/v1/admin/stats":
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
+                return self.send_json(401, {"success": False, "error": "تصريح المشرف مطلوب. يرجى تسجيل الدخول أولاً."})
+            stats = db.get_admin_stats()
+            return self.send_json(200, {"success": True, "data": stats, "admin": {"slot": admin_sess["slot"], "username": admin_sess["username"]}})
+
+        # 7. API: Admin Paginated Devices & Users (SPD Sec 7.1 - Fast on old devices)
+        if path == "/api/v1/admin/devices":
+            if not self.authenticate_admin():
+                return self.send_json(401, {"success": False, "error": "غير مصرح"})
+            search = query.get("search", [""])[0]
+            status_filter = query.get("status", [""])[0]
+            page = int(query.get("page", ["1"])[0])
+            limit = int(query.get("limit", ["10"])[0])
+            sort_by = query.get("sort_by", ["newest"])[0]
+            result = db.get_devices_paginated(search, status_filter, page, limit, sort_by)
+            return self.send_json(200, {"success": True, "data": result})
+
+        # 8. API: Admin Device Full Details & Playlists (SPD Sec 7.1 & 7.2)
+        if path.startswith("/api/v1/admin/devices/") and not path.endswith(("/rotate-pin", "/status", "/label", "/delete", "/sources")):
+            if not self.authenticate_admin():
+                return self.send_json(401, {"success": False, "error": "غير مصرح"})
+            try:
+                device_id = int(path.split("/")[5])
+                dev = db.get_device_full_details(device_id)
+                if not dev:
+                    return self.send_json(404, {"success": False, "error": "الجهاز غير موجود"})
+                return self.send_json(200, {"success": True, "device": dev})
+            except Exception as e:
+                return self.send_json(400, {"success": False, "error": f"معرف الجهاز غير صالح: {str(e)}"})
+
+        # 9. API: Admin Paginated Audit Logs (SPD Sec 10)
+        if path == "/api/v1/admin/audit-logs":
+            if not self.authenticate_admin():
+                return self.send_json(401, {"success": False, "error": "غير مصرح"})
+            search = query.get("search", [""])[0]
+            page = int(query.get("page", ["1"])[0])
+            limit = int(query.get("limit", ["15"])[0])
+            result = db.get_audit_logs_paginated(search, page, limit)
+            return self.send_json(200, {"success": True, "data": result})
+
+        # 10. Static files
         self.serve_static(path)
 
     # ================= HTTP POST Routing =================
@@ -741,30 +824,177 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 db.log_audit("device", str(device["id"]), "diagnostics_reported", "diagnostics", "", diag_data)
             return self.send_json(200, {"status": "received"})
 
-        # 9. Admin Login
-        if path == "/api/v1/admin/login":
+        # 9. Admin Login (SPD Sec 4 & 5 - Real PBKDF2 authentication, Rate Limited)
+        if path in ("/api/v1/auth/login", "/api/v1/admin/login"):
             username = body.get("username", "").strip()
             password = body.get("password", "").strip()
-            if (username == "Saddam2026" and password == "Saddam@1991") or (username == "admin" and password == "SaddamAdmin2026!"):
+            client_ip = self.client_address[0]
+            rate_key = f"admin_login:{client_ip}:{username}"
+
+            # Rate Limiting (5 attempts / 5 mins)
+            allowed, retry_after = security.check_admin_rate_limit(rate_key)
+            if not allowed:
+                return self.send_json(429, {
+                    "success": False,
+                    "error": f"تم تجاوز الحد الأقصى للمحاولات. يرجى الانتظار {retry_after} ثانية والمحاولة مجدداً."
+                })
+
+            if not username or not password:
+                security.record_admin_failed_attempt(rate_key)
+                return self.send_json(400, {"success": False, "error": "اسم المستخدم وكلمة المرور مطلوبان"})
+
+            # Check if system has any configured admin accounts
+            if not db.is_any_admin_configured():
+                return self.send_json(403, {
+                    "success": False,
+                    "setup_needed": True,
+                    "error": "نظام إدارة SADDAM IPTV بانتظار تهيئة الحسابات الإدارية (الحساب 1 والحساب 2 غير مهيئين). يرجى ضبط الحسابات في ملف الإعدادات أو عبر سطر الأوامر."
+                })
+
+            # Verify credentials with timing-safe PBKDF2
+            admin_account = db.verify_admin_credentials(username, password)
+            if not admin_account:
+                security.record_admin_failed_attempt(rate_key)
+                db.log_audit("system", client_ip, "admin_login_failed", "admin_account", "", {"username": username})
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "اسم المستخدم أو كلمة المرور غير صحيحة"
+                })
+
+            # Success
+            security.reset_admin_rate_limit(rate_key)
+            token = db.create_admin_session(admin_account["slot"], admin_account["username"], client_ip)
+            return self.send_json(200, {
+                "success": True,
+                "token": token,
+                "admin": {
+                    "slot": admin_account["slot"],
+                    "username": admin_account["username"]
+                }
+            }, cookies={"saddam_admin_session": token})
+
+        # 9b. Admin Logout (SPD Sec 6)
+        if path in ("/api/v1/auth/logout", "/api/v1/admin/logout"):
+            token = self.get_admin_session_token()
+            if token:
+                db.revoke_admin_session(token)
+            return self.send_json(200, {
+                "success": True,
+                "message": "تم تسجيل الخروج بنجاح"
+            }, cookies={"saddam_admin_session": "deleted; Max-Age=0"})
+
+        # 9c. Admin Account Update (SPD Sec 9 - Password update with current password check)
+        if path == "/api/v1/auth/update-account":
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
+                return self.send_json(401, {"success": False, "error": "غير مصرح"})
+
+            current_pwd = body.get("current_password", "").strip()
+            new_user = body.get("new_username", "").strip()
+            new_pwd = body.get("new_password", "").strip()
+
+            if not current_pwd or not new_user or not new_pwd:
+                return self.send_json(400, {"success": False, "error": "جميع الحقول مطلوبة"})
+
+            # Verify current password
+            cur_acc = db.verify_admin_credentials(admin_sess["username"], current_pwd)
+            if not cur_acc or cur_acc["slot"] != admin_sess["slot"]:
+                return self.send_json(400, {"success": False, "error": "كلمة المرور الحالية غير صحيحة"})
+
+            if len(new_pwd) < 8:
+                return self.send_json(400, {"success": False, "error": "يجب ألا تقل كلمة المرور الجديدة عن 8 أحرف"})
+
+            ok = db.update_admin_credentials(admin_sess["slot"], new_user, new_pwd)
+            if ok:
+                # Create fresh session for this slot
+                new_token = db.create_admin_session(admin_sess["slot"], new_user, self.client_address[0])
                 return self.send_json(200, {
                     "success": True,
-                    "token": "saddam_admin_secret_token_2026",
-                    "admin": {"username": username}
-                })
-            return self.send_json(401, {"success": False, "error": "اسم المستخدم أو كلمة المرور غير صحيحة"})
+                    "token": new_token,
+                    "admin": {"slot": admin_sess["slot"], "username": new_user},
+                    "message": "تم تحديث بيانات الحساب الإداري بنجاح"
+                }, cookies={"saddam_admin_session": new_token})
+            return self.send_json(500, {"success": False, "error": "فشل تحديث الحساب"})
 
         # 10. Admin: Rotate Device PIN
         if path.startswith("/api/v1/admin/devices/") and path.endswith("/rotate-pin"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             device_id = int(path.split("/")[5])
             new_pin = db.create_or_rotate_pin(device_id)
             return self.send_json(200, {"success": True, "new_pin": new_pin})
 
+        # 10b. Admin: Identify & Connect Device via MAC & Device Key (SPD Sec 7)
+        if path in ("/api/v1/admin/devices/connect", "/api/v1/admin/devices/identify", "/api/v1/admin/devices/load"):
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
+                return self.send_json(401, {"success": False, "error": "تصريح المشرف مطلوب. يرجى تسجيل الدخول أولاً."})
+            mac = body.get("mac_address") or body.get("mac", "")
+            key = body.get("device_key") or body.get("key") or body.get("pin", "")
+            clean_mac = security.normalize_mac(mac)
+            clean_pin = str(key).strip()
+
+            if not clean_mac or not clean_pin:
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "يرجى إدخال عنوان MAC ومفتاح الجهاز (Device Key) معاً."
+                })
+
+            device = db.verify_device_credentials(clean_mac, clean_pin)
+            if not device:
+                db.log_audit("admin", str(admin_sess["slot"]), "device_connect_failed", "device_code", security.mask_mac(clean_mac))
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "تعذر التحقق من الجهاز. تأكد من صحة عنوان MAC ومفتاح الجهاز (Device Key)."
+                })
+
+            if device.get("status") in ("disabled", "suspended", "blocked"):
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "هذا الجهاز موقوف أو معطل حالياً من قبل إدارة النظام."
+                })
+
+            # Retrieve only playlists associated with this exact device
+            sources = db.get_device_sources(device["id"], only_enabled=False, mask_password=False)
+            playlists = []
+            for s in sources:
+                playlists.append({
+                    "id": s["id"],
+                    "device_id": s["device_id"],
+                    "name": s["name"],
+                    "source_type": s["source_type"],
+                    "server_url": s["server_url"],
+                    "username": s.get("username", ""),
+                    "description": s.get("description", ""),
+                    "status": s.get("status", "untested"),
+                    "enabled": bool(s.get("enabled", 1)),
+                    "expires_at": s.get("expires_at"),
+                    "last_tested_at": s.get("last_tested_at"),
+                    "created_at": s.get("created_at")
+                })
+
+            db.log_audit("admin", str(admin_sess["slot"]), "device_connected", "device", str(device["id"]), {
+                "mac": security.mask_mac(clean_mac)
+            })
+
+            return self.send_json(200, {
+                "success": True,
+                "device": {
+                    "id": device["id"],
+                    "mac": device["device_code"],
+                    "label": device.get("device_label", "Android TV Device"),
+                    "platform": device.get("platform", "Android"),
+                    "status": device.get("status", "active"),
+                    "sync_version": device.get("sync_version", 1),
+                    "last_seen_at": device.get("last_seen_at")
+                },
+                "playlists": playlists
+            })
+
         # 11. Admin: Create Device
         if path == "/api/v1/admin/devices/create":
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             mac = body.get("mac")
             label = body.get("label", "جهاز جديد")
             platform = body.get("platform", "Android TV")
@@ -772,10 +1002,89 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             pin = db.create_or_rotate_pin(dev["id"])
             return self.send_json(201, {"success": True, "device": dev, "pin": pin})
 
+        # 11b. Admin: Add Playlist/Source to Device (SPD Sec 7.2)
+        if path.startswith("/api/v1/admin/devices/") and path.endswith("/sources"):
+            if not self.authenticate_admin():
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
+            device_id = int(path.split("/")[5])
+            server_url = body.get("server_url", "").strip()
+            name = body.get("name", "").strip()
+            if not server_url or not name:
+                return self.send_json(400, {"success": False, "error": "اسم المصدر ورابط السيرفر مطلوبان"})
+
+            is_safe, msg = security.is_ssrf_safe_url(server_url)
+            if not is_safe:
+                return self.send_json(400, {"success": False, "error": msg})
+
+            new_src = db.admin_add_source_to_device(device_id, body)
+            return self.send_json(201, {"success": True, "source": new_src})
+
+        # 11c. Admin: Toggle Source Enabled State
+        if path.startswith("/api/v1/admin/sources/") and path.endswith("/toggle"):
+            if not self.authenticate_admin():
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
+            source_id = int(path.split("/")[5])
+            enabled = body.get("enabled", True)
+            ok = db.admin_toggle_source(source_id, enabled)
+            return self.send_json(200, {"success": ok})
+
+        # 11d. Admin: Test Source Connectivity
+        if path.startswith("/api/v1/admin/sources/") and path.endswith("/test"):
+            if not self.authenticate_admin():
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
+            source_id = int(path.split("/")[5])
+            with db.get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
+                src = cursor.fetchone()
+            if not src:
+                return self.send_json(404, {"success": False, "error": "المصدر غير موجود"})
+            src_dict = dict(src)
+            test_status, error_code, message = probe_iptv_source(src_dict)
+            db.update_source_status(source_id, test_status, error_code)
+            return self.send_json(200, {
+                "success": test_status == "working",
+                "status": test_status,
+                "error_code": error_code,
+                "message": message,
+                "last_tested_at": int(time.time())
+            })
+
+        # 11e. Admin: Delete Source (POST alternative)
+        if path.startswith("/api/v1/admin/sources/") and path.endswith("/delete"):
+            if not self.authenticate_admin():
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
+            source_id = int(path.split("/")[5])
+            ok = db.admin_delete_source(source_id)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم حذف المصدر بنجاح"})
+            return self.send_json(404, {"error": "المصدر غير موجود"})
+
+        # 11f. Admin: Update/Edit Source (SPD Sec 8.6)
+        if path.startswith("/api/v1/admin/sources/") and path.endswith("/update"):
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
+                return self.send_json(401, {"success": False, "error": "تصريح المشرف مطلوب"})
+            source_id = int(path.split("/")[5])
+            server_url = body.get("server_url", "").strip()
+            name = body.get("name", "").strip()
+            if not server_url or not name:
+                return self.send_json(400, {"success": False, "error": "اسم المصدر ورابط السيرفر مطلوبان"})
+
+            is_safe, msg = security.is_ssrf_safe_url(server_url)
+            if not is_safe:
+                return self.send_json(400, {"success": False, "error": msg})
+
+            updated_src = db.admin_update_source(source_id, body)
+            if updated_src:
+                db.log_audit("admin", str(admin_sess["slot"]), "source_updated", "source", str(source_id), {"name": name})
+                return self.send_json(200, {"success": True, "source": updated_src})
+            return self.send_json(404, {"success": False, "error": "تعذر تحديث المصدر أو المصدر غير موجود"})
+
         # 12. Admin: Change Device Status (Active / Disabled / Suspended)
         if path.startswith("/api/v1/admin/devices/") and path.endswith("/status"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             parts = path.split("/")
             device_id = int(parts[5])
             new_status = body.get("status", "").strip().lower()
@@ -789,7 +1098,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         # 13. Admin: Update Device Label
         if path.startswith("/api/v1/admin/devices/") and path.endswith("/label"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             parts = path.split("/")
             device_id = int(parts[5])
             label = body.get("label", "").strip()
@@ -801,7 +1110,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         # 14. Admin: Delete Device (POST alternative)
         if path.startswith("/api/v1/admin/devices/") and path.endswith("/delete"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             parts = path.split("/")
             device_id = int(parts[5])
             ok = db.delete_device(device_id)
@@ -812,14 +1121,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         # 15. Admin: Clear All Audit Logs
         if path in ("/api/v1/admin/audit-logs/clear", "/api/v1/admin/audit-logs"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             db.clear_all_audit_logs()
             return self.send_json(200, {"success": True, "message": "تم مسح سجل التدقيق بالكامل بنجاح"})
 
         # 16. Admin: Delete Single Audit Log
         if path.startswith("/api/v1/admin/audit-logs/") and path.endswith("/delete"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             parts = path.split("/")
             log_id = int(parts[5])
             ok = db.delete_audit_log(log_id)
@@ -845,6 +1154,24 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(200, {"success": True, "source": res})
             return self.send_json(404, {"success": False, "error": "تعذر تحديث المصدر"})
 
+        if path.startswith("/api/v1/admin/sources/"):
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
+                return self.send_json(401, {"success": False, "error": "تصريح المشرف مطلوب"})
+            source_id = int(path.split("/")[5])
+            server_url = body.get("server_url", "").strip()
+            name = body.get("name", "").strip()
+            if not server_url or not name:
+                return self.send_json(400, {"success": False, "error": "اسم المصدر ورابط السيرفر مطلوبان"})
+            is_safe, msg = security.is_ssrf_safe_url(server_url)
+            if not is_safe:
+                return self.send_json(400, {"success": False, "error": msg})
+            res = db.admin_update_source(source_id, body)
+            if res:
+                db.log_audit("admin", str(admin_sess["slot"]), "source_updated", "source", str(source_id), {"name": name})
+                return self.send_json(200, {"success": True, "source": res})
+            return self.send_json(404, {"success": False, "error": "تعذر تحديث المصدر أو المصدر غير موجود"})
+
         self.send_json(404, {"error": "المسار غير موجود"})
 
     # ================= HTTP DELETE Routing =================
@@ -862,10 +1189,20 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(200, {"success": True, "message": "تم حذف المصدر بنجاح"})
             return self.send_json(404, {"success": False, "error": "المصدر غير موجود"})
 
+        # Admin: Delete Source
+        if path.startswith("/api/v1/admin/sources/"):
+            if not self.authenticate_admin():
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
+            source_id = int(path.split("/")[5])
+            ok = db.admin_delete_source(source_id)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "تم حذف المصدر بنجاح"})
+            return self.send_json(404, {"error": "المصدر غير موجود"})
+
         # Admin: Delete Device
         if path.startswith("/api/v1/admin/devices/"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             device_id = int(path.split("/")[5])
             ok = db.delete_device(device_id)
             if ok:
@@ -875,14 +1212,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         # Admin: Clear Audit Logs
         if path in ("/api/v1/admin/audit-logs", "/api/v1/admin/audit-logs/clear"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             db.clear_all_audit_logs()
             return self.send_json(200, {"success": True, "message": "تم مسح سجل التدقيق بنجاح"})
 
         # Admin: Delete Single Audit Log
         if path.startswith("/api/v1/admin/audit-logs/"):
             if not self.authenticate_admin():
-                return self.send_json(403, {"error": "تصريح المشرف مطلوب"})
+                return self.send_json(401, {"error": "تصريح المشرف مطلوب"})
             log_id = int(path.split("/")[5])
             ok = db.delete_audit_log(log_id)
             if ok:
@@ -891,7 +1228,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
         self.send_json(404, {"error": "المسار غير موجود"})
 
-    # ================= Static File Serving =================
+    # ================= Static File Serving with Security Hardening =================
     def serve_static(self, path: str):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         candidate_dirs = [
@@ -912,6 +1249,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         else:
             file_name = path.lstrip("/")
 
+        # Security check: Block direct access to database, python code, config, logs, or dotfiles
+        clean_name = os.path.basename(file_name).lower()
+        _, ext = os.path.splitext(clean_name)
+        forbidden_extensions = {".py", ".db", ".json", ".sqlite", ".sqlite3", ".env", ".log", ".sh", ".bat", ".md"}
+        forbidden_names = {"admin_config.json", "requirements.txt", "saddam_iptv.db"}
+        if ext in forbidden_extensions or clean_name in forbidden_names or clean_name.startswith("."):
+            return self.send_json(403, {"error": "الوصول إلى هذا الملف محظور"})
+
         file_path = None
         for d in [target_dir] + candidate_dirs:
             candidate_path = os.path.abspath(os.path.join(d, file_name))
@@ -928,6 +1273,8 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         if not file_path or not os.path.isfile(file_path):
             self.send_response(404)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
             self.end_headers()
             self.wfile.write(json.dumps({"error": "الملف المطلوب غير موجود", "path": path}, ensure_ascii=False).encode("utf-8"))
             return
@@ -948,6 +1295,11 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", mime_type)
             self.send_header("Content-Length", str(len(content)))
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+            self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src 'self' https://saddamplayer.onrender.com; frame-ancestors 'none';")
             self.end_headers()
             self.wfile.write(content)
         except Exception as e:

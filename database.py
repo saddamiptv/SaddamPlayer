@@ -15,7 +15,10 @@ import time
 import os
 import urllib.parse
 from typing import Optional, Dict, Any, List
-from security import hash_pin, verify_pin, hash_token, normalize_mac, generate_session_token
+from security import (
+    hash_pin, verify_pin, hash_token, normalize_mac, generate_session_token,
+    hash_password, verify_password
+)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "saddam_iptv.db")
 
@@ -120,19 +123,56 @@ def init_db():
             )
         """)
 
-        # 6. Admin Users Table
+        # 6. Admin Accounts Table (Strictly Slot 1 and Slot 2 only)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admin_users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at INTEGER
+            CREATE TABLE IF NOT EXISTS admin_accounts (
+                slot INTEGER PRIMARY KEY CHECK (slot IN (1, 2)),
+                username TEXT,
+                password_hash TEXT,
+                salt TEXT,
+                is_configured INTEGER DEFAULT 0,
+                updated_at INTEGER
             )
         """)
 
+        # Ensure Slots 1 and 2 exist (unconfigured placeholders)
+        now_ts = int(time.time())
+        cursor.execute("SELECT slot FROM admin_accounts WHERE slot = 1")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO admin_accounts (slot, username, password_hash, salt, is_configured, updated_at) VALUES (1, '', '', '', 0, ?)", (now_ts,))
+
+        cursor.execute("SELECT slot FROM admin_accounts WHERE slot = 2")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO admin_accounts (slot, username, password_hash, salt, is_configured, updated_at) VALUES (2, '', '', '', 0, ?)", (now_ts,))
+
+        # 7. Admin Sessions Table (Server-managed sessions with idle timeout)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS admin_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_slot INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                token_hash TEXT UNIQUE NOT NULL,
+                ip_address TEXT,
+                created_at INTEGER NOT NULL,
+                last_active_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY (account_slot) REFERENCES admin_accounts(slot)
+            )
+        """)
+
+        # Clean up any legacy admin_users table with hardcoded credentials
+        try:
+            cursor.execute("DROP TABLE IF EXISTS admin_users")
+        except Exception:
+            pass
+
         conn.commit()
 
-    # Seed default data if needed
+    # Synchronize admin account configuration from environment or admin_config.json
+    sync_admin_config()
+
+    # Seed demo device if needed
     seed_initial_data()
 
 
@@ -151,23 +191,84 @@ def log_audit(actor_type: str, actor_id: str, action: str, target_type: str = ""
         print(f"[Audit Error] {e}")
 
 
-def seed_initial_data():
-    """Seeds a ready-to-test device and admin user."""
-    now = int(time.time())
+def sync_admin_config():
+    """
+    Syncs admin accounts from environment variables or admin_config.json.
+    Does NOT invent credentials. If not set, slots remain empty/unconfigured.
+    """
+    config_file = os.path.join(os.path.dirname(__file__), "admin_config.json")
+    file_cfg = {}
+    if os.path.isfile(config_file):
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                file_cfg = json.load(f)
+        except Exception as e:
+            print(f"[Config Error] Failed to read admin_config.json: {e}")
+
+    now_ts = int(time.time())
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Admin user
-        from security import hash_pin
-        cursor.execute("SELECT id FROM admin_users WHERE username = 'Saddam2026'")
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                           ('Saddam2026', hash_pin("Saddam@1991"), now))
+        # Slot 1
+        env_u1 = os.environ.get("ADMIN_ACCOUNT_1_USERNAME", "").strip()
+        env_p1 = os.environ.get("ADMIN_ACCOUNT_1_PASSWORD", "").strip()
+        env_h1 = os.environ.get("ADMIN_ACCOUNT_1_PASSWORD_HASH", "").strip()
 
-        cursor.execute("SELECT id FROM admin_users WHERE username = 'admin'")
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO admin_users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                           ('admin', hash_pin("SaddamAdmin2026!"), now))
+        file_a1 = file_cfg.get("account_1", {})
+        file_u1 = file_a1.get("username", "").strip()
+        file_h1 = file_a1.get("password_hash", "").strip()
+        file_s1 = file_a1.get("salt", "").strip()
+        file_conf1 = file_a1.get("is_configured", False)
+
+        if env_u1 and (env_p1 or env_h1):
+            if env_p1:
+                h1, s1 = hash_password(env_p1)
+            else:
+                h1, s1 = env_h1, "env_salt"
+            cursor.execute("""
+                UPDATE admin_accounts SET username = ?, password_hash = ?, salt = ?, is_configured = 1, updated_at = ?
+                WHERE slot = 1
+            """, (env_u1, h1, s1, now_ts))
+        elif file_conf1 and file_u1 and file_h1 and file_s1:
+            cursor.execute("""
+                UPDATE admin_accounts SET username = ?, password_hash = ?, salt = ?, is_configured = 1, updated_at = ?
+                WHERE slot = 1
+            """, (file_u1, file_h1, file_s1, now_ts))
+
+        # Slot 2
+        env_u2 = os.environ.get("ADMIN_ACCOUNT_2_USERNAME", "").strip()
+        env_p2 = os.environ.get("ADMIN_ACCOUNT_2_PASSWORD", "").strip()
+        env_h2 = os.environ.get("ADMIN_ACCOUNT_2_PASSWORD_HASH", "").strip()
+
+        file_a2 = file_cfg.get("account_2", {})
+        file_u2 = file_a2.get("username", "").strip()
+        file_h2 = file_a2.get("password_hash", "").strip()
+        file_s2 = file_a2.get("salt", "").strip()
+        file_conf2 = file_a2.get("is_configured", False)
+
+        if env_u2 and (env_p2 or env_h2):
+            if env_p2:
+                h2, s2 = hash_password(env_p2)
+            else:
+                h2, s2 = env_h2, "env_salt"
+            cursor.execute("""
+                UPDATE admin_accounts SET username = ?, password_hash = ?, salt = ?, is_configured = 1, updated_at = ?
+                WHERE slot = 2
+            """, (env_u2, h2, s2, now_ts))
+        elif file_conf2 and file_u2 and file_h2 and file_s2:
+            cursor.execute("""
+                UPDATE admin_accounts SET username = ?, password_hash = ?, salt = ?, is_configured = 1, updated_at = ?
+                WHERE slot = 2
+            """, (file_u2, file_h2, file_s2, now_ts))
+
+        conn.commit()
+
+
+def seed_initial_data():
+    """Seeds a ready-to-test device if table is completely empty (no admin users seeded)."""
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
 
         # Sample Device: MAC AA:BB:CC:11:22:33, PIN 123456
         demo_mac = "AA:BB:CC:11:22:33"
@@ -709,4 +810,454 @@ def delete_audit_log(log_id: int) -> bool:
         conn.execute("DELETE FROM audit_logs WHERE id = ?", (log_id,))
         conn.commit()
     return True
+
+
+# =========================================================================
+# Enhanced Administrator Authentication & Two-Slot Management (SPD Sec 4-7)
+# =========================================================================
+
+def get_admin_slots_status() -> List[Dict[str, Any]]:
+    """Returns safe status of both admin account slots (no hashes/passwords)."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT slot, username, is_configured, updated_at FROM admin_accounts ORDER BY slot ASC")
+        rows = cursor.fetchall()
+        return [
+            {
+                "slot": r["slot"],
+                "is_configured": bool(r["is_configured"]),
+                "username": r["username"] if r["is_configured"] else "",
+                "updated_at": r["updated_at"]
+            }
+            for r in rows
+        ]
+
+
+def is_any_admin_configured() -> bool:
+    """Checks if at least one admin account slot is configured."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM admin_accounts WHERE is_configured = 1")
+        return cursor.fetchone()["cnt"] > 0
+
+
+def verify_admin_credentials(username: str, password: str) -> Optional[Dict[str, Any]]:
+    """
+    Verifies admin credentials against configured slots using PBKDF2.
+    Returns account dict (slot, username) or None.
+    """
+    clean_user = (username or "").strip()
+    clean_pass = (password or "").strip()
+    if not clean_user or not clean_pass:
+        return None
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT slot, username, password_hash, salt, is_configured
+            FROM admin_accounts
+            WHERE is_configured = 1 AND username = ?
+        """, (clean_user,))
+        row = cursor.fetchone()
+        if not row:
+            # Timing mitigation dummy verification
+            verify_password("dummy", "00" * 32, "00" * 16)
+            return None
+
+        if verify_password(clean_pass, row["password_hash"], row["salt"]):
+            return {
+                "slot": row["slot"],
+                "username": row["username"]
+            }
+        return None
+
+
+def create_admin_session(slot: int, username: str, ip_address: str = "") -> str:
+    """Creates a secure server-managed session for an administrator."""
+    token = generate_session_token()
+    token_h = hash_token(token)
+    now = int(time.time())
+    expires_at = now + 43200  # 12 hours absolute lifetime
+
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO admin_sessions (account_slot, username, token_hash, ip_address, created_at, last_active_at, expires_at, revoked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+        """, (slot, username, token_h, ip_address, now, now, expires_at))
+        conn.commit()
+
+    log_audit("admin", str(slot), "admin_login_success", "admin_account", str(slot), {"ip": ip_address})
+    return token
+
+
+def validate_admin_session(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Validates an admin session token. Checks revocation, absolute expiry, and idle timeout (1 hour).
+    Updates last_active_at on success.
+    """
+    if not token:
+        return None
+    token_h = hash_token(token)
+    now = int(time.time())
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT s.*, a.is_configured
+            FROM admin_sessions s
+            JOIN admin_accounts a ON s.account_slot = a.slot
+            WHERE s.token_hash = ? AND s.revoked_at IS NULL AND a.is_configured = 1
+        """, (token_h,))
+        session = cursor.fetchone()
+        if not session:
+            return None
+
+        # Check absolute lifetime
+        if session["expires_at"] <= now:
+            cursor.execute("UPDATE admin_sessions SET revoked_at = ? WHERE id = ?", (now, session["id"]))
+            conn.commit()
+            return None
+
+        # Check idle timeout (1 hour = 3600 seconds)
+        if (now - session["last_active_at"]) > 3600:
+            cursor.execute("UPDATE admin_sessions SET revoked_at = ? WHERE id = ?", (now, session["id"]))
+            conn.commit()
+            log_audit("admin", str(session["account_slot"]), "admin_session_idle_timeout", "admin_session", str(session["id"]))
+            return None
+
+        # Update activity
+        cursor.execute("UPDATE admin_sessions SET last_active_at = ? WHERE id = ?", (now, session["id"]))
+        conn.commit()
+
+        return {
+            "session_id": session["id"],
+            "slot": session["account_slot"],
+            "username": session["username"],
+            "ip_address": session["ip_address"],
+            "created_at": session["created_at"],
+            "last_active_at": now,
+            "expires_at": session["expires_at"]
+        }
+
+
+def revoke_admin_session(token: str) -> bool:
+    """Invalidates an admin session."""
+    if not token:
+        return False
+    token_h = hash_token(token)
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, account_slot FROM admin_sessions WHERE token_hash = ? AND revoked_at IS NULL", (token_h,))
+        sess = cursor.fetchone()
+        if sess:
+            cursor.execute("UPDATE admin_sessions SET revoked_at = ? WHERE id = ?", (now, sess["id"]))
+            conn.commit()
+            log_audit("admin", str(sess["account_slot"]), "admin_logout", "admin_session", str(sess["id"]))
+            return True
+    return False
+
+
+def revoke_all_sessions_for_slot(slot: int) -> bool:
+    """Revokes all active sessions for an administrator slot (e.g. after password change)."""
+    now = int(time.time())
+    with get_db() as conn:
+        conn.execute("UPDATE admin_sessions SET revoked_at = ? WHERE account_slot = ? AND revoked_at IS NULL", (now, slot))
+        conn.commit()
+    return True
+
+
+def update_admin_credentials(slot: int, new_username: str, new_password: str) -> bool:
+    """
+    Updates credentials for an admin slot (Slot 1 or 2).
+    Generates PBKDF2 hash with unique salt, writes to DB and admin_config.json,
+    and invalidates existing sessions.
+    """
+    if slot not in (1, 2):
+        return False
+    clean_user = (new_username or "").strip()
+    clean_pass = (new_password or "").strip()
+    if not clean_user or not clean_pass or len(clean_pass) < 8:
+        return False
+
+    now_ts = int(time.time())
+    pwd_hash, salt = hash_password(clean_pass)
+
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE admin_accounts
+            SET username = ?, password_hash = ?, salt = ?, is_configured = 1, updated_at = ?
+            WHERE slot = ?
+        """, (clean_user, pwd_hash, salt, now_ts, slot))
+        conn.commit()
+
+    # Revoke sessions for this slot
+    revoke_all_sessions_for_slot(slot)
+
+    # Update admin_config.json
+    config_file = os.path.join(os.path.dirname(__file__), "admin_config.json")
+    try:
+        cfg = {}
+        if os.path.isfile(config_file):
+            with open(config_file, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        slot_key = f"account_{slot}"
+        cfg[slot_key] = {
+            "slot": slot,
+            "username": clean_user,
+            "password_hash": pwd_hash,
+            "salt": salt,
+            "is_configured": True,
+            "updated_at": now_ts
+        }
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Config Write Warning] Failed to update admin_config.json: {e}")
+
+    log_audit("admin", str(slot), "admin_credentials_updated", "admin_account", str(slot))
+    return True
+
+
+def disable_admin_slot(slot: int) -> bool:
+    """Disables / resets an admin account slot."""
+    if slot not in (1, 2):
+        return False
+    now_ts = int(time.time())
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE admin_accounts
+            SET username = '', password_hash = '', salt = '', is_configured = 0, updated_at = ?
+            WHERE slot = ?
+        """, (now_ts, slot))
+        conn.commit()
+
+    revoke_all_sessions_for_slot(slot)
+
+    config_file = os.path.join(os.path.dirname(__file__), "admin_config.json")
+    try:
+        if os.path.isfile(config_file):
+            with open(config_file, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            slot_key = f"account_{slot}"
+            if slot_key in cfg:
+                cfg[slot_key]["is_configured"] = False
+                cfg[slot_key]["username"] = ""
+                cfg[slot_key]["password_hash"] = ""
+                cfg[slot_key]["salt"] = ""
+            with open(config_file, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+    log_audit("admin", str(slot), "admin_slot_disabled", "admin_account", str(slot))
+    return True
+
+
+# =========================================================================
+# Enhanced Paginated User/Device Management (SPD Sec 7) - Fast for Old Devices
+# =========================================================================
+
+def get_devices_paginated(search: str = "", status_filter: str = "", page: int = 1, limit: int = 10, sort_by: str = "newest") -> Dict[str, Any]:
+    """
+    Retrieves devices with server-side pagination, search, and filtering.
+    Optimized for fast rendering on old devices.
+    """
+    page = max(1, int(page or 1))
+    limit = max(1, min(100, int(limit or 10)))
+    offset = (page - 1) * limit
+
+    conditions = []
+    params = []
+
+    if search:
+        search_term = f"%{search.strip()}%"
+        conditions.append("(device_code LIKE ? OR device_label LIKE ? OR platform LIKE ?)")
+        params.extend([search_term, search_term, search_term])
+
+    if status_filter:
+        clean_status = status_filter.strip().lower()
+        if clean_status == "active":
+            conditions.append("status = 'active'")
+        elif clean_status in ("disabled", "suspended", "blocked"):
+            conditions.append("status IN ('disabled', 'suspended', 'blocked')")
+
+    where_clause = ""
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+    order_clause = "ORDER BY d.id DESC"
+    if sort_by == "oldest":
+        order_clause = "ORDER BY d.id ASC"
+    elif sort_by == "name":
+        order_clause = "ORDER BY d.device_label ASC"
+    elif sort_by == "last_seen":
+        order_clause = "ORDER BY d.last_seen_at DESC"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Count total
+        count_query = f"SELECT COUNT(*) as total FROM devices {where_clause}"
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()["total"]
+
+        # Fetch paginated items
+        data_query = f"""
+            SELECT d.*,
+                   (SELECT COUNT(*) FROM iptv_sources WHERE device_id = d.id) as sources_count,
+                   (SELECT expires_at FROM device_pairing_codes WHERE device_id = d.id AND consumed_at IS NULL ORDER BY id DESC LIMIT 1) as pin_expires_at
+            FROM devices d
+            {where_clause}
+            {order_clause}
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(data_query, params + [limit, offset])
+        devices = [dict(r) for r in cursor.fetchall()]
+
+        pages = max(1, (total + limit - 1) // limit)
+
+        return {
+            "devices": devices,
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "limit": limit
+        }
+
+
+def get_device_full_details(device_id: int) -> Optional[Dict[str, Any]]:
+    """Returns full details of a device including active PIN and all its IPTV sources."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM devices WHERE id = ?", (device_id,))
+        dev = cursor.fetchone()
+        if not dev:
+            return None
+
+        dev_dict = dict(dev)
+
+        # Get active PIN if available
+        cursor.execute("""
+            SELECT id, expires_at FROM device_pairing_codes
+            WHERE device_id = ? AND consumed_at IS NULL
+            ORDER BY id DESC LIMIT 1
+        """, (device_id,))
+        pin_row = cursor.fetchone()
+        dev_dict["has_pin"] = pin_row is not None
+
+        # Get sources
+        cursor.execute("SELECT * FROM iptv_sources WHERE device_id = ? ORDER BY id DESC", (device_id,))
+        sources = [dict(r) for r in cursor.fetchall()]
+
+        # Mask passwords for display
+        for s in sources:
+            if s.get("password_encrypted"):
+                s["has_password"] = True
+                s["password_display"] = "••••••••"
+            else:
+                s["has_password"] = False
+                s["password_display"] = ""
+
+        dev_dict["sources"] = sources
+        dev_dict["sources_count"] = len(sources)
+
+        return dev_dict
+
+
+def admin_add_source_to_device(device_id: int, source_data: dict) -> Optional[Dict[str, Any]]:
+    """Allows administrator to add a playlist/source directly to any device."""
+    return add_iptv_source(device_id, source_data)
+
+
+def admin_toggle_source(source_id: int, enabled: bool) -> bool:
+    """Toggles source enabled state from admin panel."""
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, device_id, name FROM iptv_sources WHERE id = ?", (source_id,))
+        src = cursor.fetchone()
+        if not src:
+            return False
+
+        cursor.execute("""
+            UPDATE iptv_sources SET enabled = ?, updated_at = ? WHERE id = ?
+        """, (1 if enabled else 0, now, source_id))
+
+        cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, src["device_id"]))
+        conn.commit()
+
+        log_audit("admin", "1", "admin_source_toggled", "iptv_source", str(source_id), {"enabled": enabled, "name": src["name"]})
+        return True
+
+
+def admin_delete_source(source_id: int) -> bool:
+    """Deletes an IPTV source from admin panel."""
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, device_id, name FROM iptv_sources WHERE id = ?", (source_id,))
+        src = cursor.fetchone()
+        if not src:
+            return False
+
+        cursor.execute("DELETE FROM iptv_sources WHERE id = ?", (source_id,))
+        cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, src["device_id"]))
+        conn.commit()
+
+        log_audit("admin", "1", "admin_source_deleted", "iptv_source", str(source_id), {"name": src["name"]})
+        return True
+
+
+def admin_update_source(source_id: int, source_data: dict) -> Optional[Dict[str, Any]]:
+    """Allows administrator to update an IPTV source."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT device_id FROM iptv_sources WHERE id = ?", (source_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        device_id = row["device_id"]
+    return update_iptv_source(source_id, device_id, source_data)
+
+
+def get_audit_logs_paginated(search: str = "", page: int = 1, limit: int = 15) -> Dict[str, Any]:
+    """Retrieves paginated audit logs."""
+    page = max(1, int(page or 1))
+    limit = max(1, min(100, int(limit or 15)))
+    offset = (page - 1) * limit
+
+    conditions = []
+    params = []
+
+    if search:
+        st = f"%{search.strip()}%"
+        conditions.append("(actor_type LIKE ? OR action LIKE ? OR target_type LIKE ? OR target_id LIKE ? OR metadata_redacted LIKE ?)")
+        params.extend([st, st, st, st, st])
+
+    where_clause = ""
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT COUNT(*) as total FROM audit_logs {where_clause}", params)
+        total = cursor.fetchone()["total"]
+
+        cursor.execute(f"""
+            SELECT * FROM audit_logs
+            {where_clause}
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+        """, params + [limit, offset])
+        logs = [dict(r) for r in cursor.fetchall()]
+
+        pages = max(1, (total + limit - 1) // limit)
+        return {
+            "logs": logs,
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "limit": limit
+        }
 

@@ -24,6 +24,68 @@ _RATE_LIMITS = {}
 MAX_PIN_ATTEMPTS = 5
 PIN_LOCKOUT_SECONDS = 300  # 5 minutes
 
+# Admin login rate limiting
+_ADMIN_RATE_LIMITS = {}
+MAX_ADMIN_LOGIN_ATTEMPTS = 5
+ADMIN_LOCKOUT_SECONDS = 300  # 5 minutes
+
+
+def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Hashes a password using PBKDF2-HMAC-SHA256 with 200,000 iterations.
+    Returns (hex_hash, salt_hex).
+    """
+    if not salt:
+        salt = secrets.token_hex(16)
+    normalized = str(password).strip()
+    pwd_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        normalized.encode('utf-8'),
+        salt.encode('utf-8'),
+        200000
+    ).hex()
+    return pwd_hash, salt
+
+
+def verify_password(provided_password: str, stored_hash: str, salt: str) -> bool:
+    """Verifies a password against stored PBKDF2 hash using constant-time comparison."""
+    if not provided_password or not stored_hash or not salt:
+        return False
+    candidate_hash, _ = hash_password(provided_password, salt=salt)
+    return hmac.compare_digest(candidate_hash, stored_hash)
+
+
+def check_admin_rate_limit(key: str) -> Tuple[bool, int]:
+    """
+    Checks if an IP or username has exceeded maximum failed admin login attempts.
+    Returns (is_allowed, seconds_remaining).
+    """
+    now = time.time()
+    attempts = _ADMIN_RATE_LIMITS.get(key, [])
+    attempts = [t for t in attempts if now - t < ADMIN_LOCKOUT_SECONDS]
+    _ADMIN_RATE_LIMITS[key] = attempts
+
+    if len(attempts) >= MAX_ADMIN_LOGIN_ATTEMPTS:
+        oldest = attempts[0]
+        remaining = int(ADMIN_LOCKOUT_SECONDS - (now - oldest))
+        return False, max(remaining, 1)
+
+    return True, 0
+
+
+def record_admin_failed_attempt(key: str):
+    """Records a failed admin login attempt."""
+    now = time.time()
+    attempts = _ADMIN_RATE_LIMITS.get(key, [])
+    attempts.append(now)
+    _ADMIN_RATE_LIMITS[key] = attempts
+
+
+def reset_admin_rate_limit(key: str):
+    """Resets failed admin attempts after successful login."""
+    if key in _ADMIN_RATE_LIMITS:
+        del _ADMIN_RATE_LIMITS[key]
+
 
 def hash_pin(pin: str) -> str:
     """Hashes a 6-digit PIN with system salt using SHA-256."""

@@ -1,0 +1,18 @@
+{
+  "account_1": {
+    "slot": 1,
+    "username": "Drexx0301",
+    "password_hash": "3b22ab17671187a21e7fa560f735e99d4b5f2c95d34171938bfa28db5dd37a0e",
+    "salt": "21c6a2825fda08f333623b466ed5fa95",
+    "is_configured": true,
+    "updated_at": 1793548865
+  },
+  "account_2": {
+    "slot": 2,
+    "username": "Saddam1991",
+    "password_hash": "4e72ec1079925908b053273696eb6138a9b11a9fac00ae0573e1347cb0d7d973",
+    "salt": "01187831eded9447fd9b26ea15f50042",
+    "is_configured": true,
+    "updated_at": 1793548866
+  }
+}

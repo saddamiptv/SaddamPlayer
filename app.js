@@ -30,20 +30,31 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function cacheDOMElements() {
+  DOM.loginViewSection = document.getElementById('loginViewSection');
   DOM.pairingSection = document.getElementById('pairingSection');
   DOM.dashboardSection = document.getElementById('dashboardSection');
+  DOM.indexLoginForm = document.getElementById('indexLoginForm');
+  DOM.indexAdminUser = document.getElementById('indexAdminUser');
+  DOM.indexAdminPass = document.getElementById('indexAdminPass');
+  DOM.indexLoginAlert = document.getElementById('indexLoginAlert');
+  DOM.indexSetupNotice = document.getElementById('indexSetupNotice');
+  DOM.btnSwitchToAdmin = document.getElementById('btnSwitchToAdmin');
+  DOM.btnSwitchToPairing = document.getElementById('btnSwitchToPairing');
+  DOM.btnGoToPairing = document.getElementById('btnGoToPairing');
+  DOM.btnBackToAdminLogin = document.getElementById('btnBackToAdminLogin');
+
   DOM.macInput = document.getElementById('macInput');
   DOM.pinInput = document.getElementById('pinInput');
   DOM.togglePinVisibility = document.getElementById('togglePinVisibility');
   DOM.pairingForm = document.getElementById('pairingForm');
   DOM.btnPair = document.getElementById('btnPair');
   DOM.pairingAlert = document.getElementById('pairingAlert');
-  DOM.demoFillBtn = document.getElementById('demoFillBtn');
 
   // Header & Device elements
   DOM.headerDeviceBadge = document.getElementById('headerDeviceBadge');
   DOM.deviceLabel = document.getElementById('deviceLabel');
   DOM.deviceMacMasked = document.getElementById('deviceMacMasked');
+  DOM.deviceMacFull = document.getElementById('deviceMacFull');
   DOM.devicePlatform = document.getElementById('devicePlatform');
   DOM.deviceSyncVersion = document.getElementById('deviceSyncVersion');
   DOM.btnLogout = document.getElementById('btnLogout');
@@ -53,7 +64,6 @@ function cacheDOMElements() {
   DOM.statTotalSources = document.getElementById('statTotalSources');
   DOM.statActiveSources = document.getElementById('statActiveSources');
   DOM.statWorkingSources = document.getElementById('statWorkingSources');
-  DOM.statSyncState = document.getElementById('statSyncState');
 
   // Sources
   DOM.sourcesContainer = document.getElementById('sourcesContainer');
@@ -64,9 +74,9 @@ function cacheDOMElements() {
   // Modals
   DOM.modalHelp = document.getElementById('modalHelp');
   DOM.modalSource = document.getElementById('modalSource');
-  DOM.modalDelete = document.getElementById('modalDelete');
-  DOM.modalUnlink = document.getElementById('modalUnlink');
-  DOM.modalPrivacy = document.getElementById('modalPrivacy');
+  DOM.closeHelpModal = document.getElementById('closeHelpModal');
+  DOM.closeSourceModal = document.getElementById('closeSourceModal');
+  DOM.cancelSourceModalBtn = document.getElementById('cancelSourceModalBtn');
 
   // Add/Edit Source Form
   DOM.sourceForm = document.getElementById('sourceForm');
@@ -77,18 +87,52 @@ function cacheDOMElements() {
   DOM.xtreamFields = document.getElementById('xtreamFields');
   DOM.sourceNameInput = document.getElementById('sourceNameInput');
   DOM.sourceUrlInput = document.getElementById('sourceUrlInput');
-  DOM.sourceDescInput = document.getElementById('sourceDescInput');
-  DOM.sourceEnabledCheckbox = document.getElementById('sourceEnabledCheckbox');
-  DOM.xtreamServerInput = document.getElementById('xtreamServerInput');
-  DOM.xtreamUserInput = document.getElementById('xtreamUserInput');
-  DOM.xtreamPassInput = document.getElementById('xtreamPassInput');
-
-  // Sync tab
-  DOM.syncPayloadViewer = document.getElementById('syncPayloadViewer');
-  DOM.btnRefreshSyncPreview = document.getElementById('btnRefreshSyncPreview');
-}
-
 function bindEvents() {
+  // Mode switchers
+  if (DOM.btnSwitchToAdmin) {
+    DOM.btnSwitchToAdmin.addEventListener('click', () => {
+      window.location.href = 'admin.html';
+    });
+  }
+
+  if (DOM.btnGoToPairing) {
+    DOM.btnGoToPairing.addEventListener('click', () => {
+      showPairingView();
+    });
+  }
+
+  if (DOM.btnSwitchToPairing) {
+    DOM.btnSwitchToPairing.addEventListener('click', () => {
+      showPairingView();
+    });
+  }
+
+  if (DOM.btnBackToAdminLogin) {
+    DOM.btnBackToAdminLogin.addEventListener('click', () => {
+      showLoginView();
+    });
+  }
+
+  // Admin login on index.html
+  if (DOM.indexLoginForm) {
+    DOM.indexLoginForm.addEventListener('submit', handleIndexAdminLogin);
+  }
+
+  const indexToggleBtn = document.getElementById('indexTogglePassBtn');
+  if (indexToggleBtn) {
+    indexToggleBtn.addEventListener('click', () => {
+      const p = DOM.indexAdminPass;
+      const icon = document.getElementById('indexTogglePassIcon');
+      if (p.type === 'password') {
+        p.type = 'text';
+        icon.className = 'fa-solid fa-eye-slash';
+      } else {
+        p.type = 'password';
+        icon.className = 'fa-solid fa-eye';
+      }
+    });
+  }
+
   // MAC Input formatter
   if (DOM.macInput) {
     DOM.macInput.addEventListener('input', (e) => {
@@ -115,15 +159,6 @@ function bindEvents() {
     });
   }
 
-  // Demo Credentials Fill
-  if (DOM.demoFillBtn) {
-    DOM.demoFillBtn.addEventListener('click', () => {
-      DOM.macInput.value = 'AA:BB:CC:11:22:33';
-      DOM.pinInput.value = '123456';
-      showAlert(DOM.pairingAlert, 'تم تعبئة بيانات الجهاز التجريبي. اضغط على «ربط الجهاز والمتابعة».', 'info');
-    });
-  }
-
   // Pairing Form Submit
   if (DOM.pairingForm) {
     DOM.pairingForm.addEventListener('submit', handlePairing);
@@ -136,41 +171,38 @@ function bindEvents() {
 
   // Unlink Device
   if (DOM.btnUnlink) {
-    DOM.btnUnlink.addEventListener('click', () => openModal(DOM.modalUnlink));
-  }
-  const btnConfirmUnlink = document.getElementById('btnConfirmUnlink');
-  if (btnConfirmUnlink) {
-    btnConfirmUnlink.addEventListener('click', handleUnlink);
-  }
-
-  // Tabs Switching
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tab;
-      switchTab(target);
+    DOM.btnUnlink.addEventListener('click', () => {
+      if (confirm('هل أنت متأكد من رغبتك في إلغاء ربط هذا الجهاز من هذه الجلسة؟')) {
+        handleUnlink();
+      }
     });
-  });
+  }
 
   // Help Modal triggers
   document.querySelectorAll('.open-help-modal').forEach(el => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      openModal(DOM.modalHelp);
+      DOM.modalHelp?.classList.remove('hidden');
     });
   });
 
-  // Privacy Modal triggers
-  document.querySelectorAll('.open-privacy-modal').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.preventDefault();
-      openModal(DOM.modalPrivacy);
+  if (DOM.closeHelpModal) {
+    DOM.closeHelpModal.addEventListener('click', () => {
+      DOM.modalHelp?.classList.add('hidden');
     });
-  });
+  }
 
-  // Modal Closers
-  document.querySelectorAll('.modal-close-trigger').forEach(btn => {
-    btn.addEventListener('click', () => closeModal());
-  });
+  if (DOM.closeSourceModal) {
+    DOM.closeSourceModal.addEventListener('click', () => {
+      DOM.modalSource?.classList.add('hidden');
+    });
+  }
+
+  if (DOM.cancelSourceModalBtn) {
+    DOM.cancelSourceModalBtn.addEventListener('click', () => {
+      DOM.modalSource?.classList.add('hidden');
+    });
+  }
 
   // Add Source Modal Trigger
   if (DOM.btnOpenAddSource) {
@@ -197,20 +229,89 @@ function bindEvents() {
   if (DOM.sourceFilterSelect) {
     DOM.sourceFilterSelect.addEventListener('change', renderSources);
   }
+}
 
-  // Sync Refresh
-  if (DOM.btnRefreshSyncPreview) {
-    DOM.btnRefreshSyncPreview.addEventListener('click', loadSyncPreview);
+// ================= View Switchers =================
+function showLoginView() {
+  DOM.loginViewSection?.classList.remove('hidden');
+  DOM.pairingSection?.classList.add('hidden');
+  DOM.dashboardSection?.classList.add('hidden');
+  DOM.btnSwitchToAdmin?.classList.add('hidden');
+  DOM.btnSwitchToPairing?.classList.remove('hidden');
+}
+
+function showPairingView() {
+  DOM.loginViewSection?.classList.add('hidden');
+  DOM.pairingSection?.classList.remove('hidden');
+  DOM.dashboardSection?.classList.add('hidden');
+  DOM.btnSwitchToAdmin?.classList.remove('hidden');
+  DOM.btnSwitchToPairing?.classList.add('hidden');
+}
+
+function showDashboardView() {
+  DOM.loginViewSection?.classList.add('hidden');
+  DOM.pairingSection?.classList.add('hidden');
+  DOM.dashboardSection?.classList.remove('hidden');
+  DOM.headerDeviceBadge?.classList.remove('hidden');
+  DOM.btnLogout?.classList.remove('hidden');
+  DOM.btnSwitchToAdmin?.classList.remove('hidden');
+  DOM.btnSwitchToPairing?.classList.add('hidden');
+}
+
+async function handleIndexAdminLogin(e) {
+  e.preventDefault();
+  const user = DOM.indexAdminUser.value.trim();
+  const pass = DOM.indexAdminPass.value.trim();
+  const alertEl = DOM.indexLoginAlert;
+  const btn = document.getElementById('btnIndexLogin');
+
+  alertEl.classList.add('hidden');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      window.location.href = 'admin.html';
+    } else {
+      alertEl.className = 'alert-box danger';
+      alertEl.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> <span>${data.error || 'اسم المستخدم أو كلمة المرور غير صحيحة'}</span>`;
+      alertEl.classList.remove('hidden');
+      if (data.setup_needed && DOM.indexSetupNotice) {
+        DOM.indexSetupNotice.classList.remove('hidden');
+      }
+    }
+  } catch (err) {
+    alertEl.className = 'alert-box danger';
+    alertEl.innerHTML = `<span>تعذر الاتصال بالخادم. تأكد من تشغيل السيرفر.</span>`;
+    alertEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
   }
 }
 
-// ==========================================================================
-// Authentication & Session Management
-// ==========================================================================
-
 async function checkExistingSession() {
+  // Check if admin is already logged in
+  try {
+    const authRes = await fetch('/api/v1/auth/status');
+    const authData = await authRes.json();
+    if (authData.authenticated) {
+      window.location.href = 'admin.html';
+      return;
+    }
+    if (authData.setup_needed && DOM.indexSetupNotice) {
+      DOM.indexSetupNotice.classList.remove('hidden');
+    }
+  } catch (err) {}
+
+  // Check if device session exists
   if (!state.token) {
-    showPairingView();
+    showLoginView();
     return;
   }
 
@@ -223,14 +324,12 @@ async function checkExistingSession() {
       state.device = data.device;
       showDashboardView();
       await loadSources();
-      await loadSyncPreview();
     } else {
       clearSession();
-      showPairingView();
+      showLoginView();
     }
   } catch (err) {
-    console.error('Session check failed', err);
-    showPairingView();
+    showLoginView();
   }
 }
 
@@ -501,9 +600,9 @@ function getStatusInfo(status) {
 
 function openAddSourceModal() {
   state.currentEditingSourceId = null;
-  DOM.sourceModalTitle.textContent = 'إضافة مصدر IPTV جديد';
-  DOM.sourceForm.reset();
-  DOM.sourceEnabledCheckbox.checked = true;
+  if (DOM.sourceModalTitle) DOM.sourceModalTitle.textContent = 'إضافة مصدر IPTV جديد';
+  if (DOM.sourceForm) DOM.sourceForm.reset();
+  if (DOM.sourceEnabledCheckbox) DOM.sourceEnabledCheckbox.checked = true;
   setSourceModalType('m3u');
   openModal(DOM.modalSource);
 }
@@ -513,20 +612,22 @@ function openEditSourceModal(id) {
   if (!source) return;
 
   state.currentEditingSourceId = id;
-  DOM.sourceModalTitle.textContent = 'تعديل مصدر IPTV';
-  DOM.sourceNameInput.value = source.name;
-  DOM.sourceDescInput.value = source.description || '';
-  DOM.sourceEnabledCheckbox.checked = source.enabled === 1;
+  if (DOM.sourceModalTitle) DOM.sourceModalTitle.textContent = 'تعديل مصدر IPTV';
+  if (DOM.sourceNameInput) DOM.sourceNameInput.value = source.name;
+  if (DOM.sourceDescInput) DOM.sourceDescInput.value = source.description || '';
+  if (DOM.sourceEnabledCheckbox) DOM.sourceEnabledCheckbox.checked = source.enabled === 1;
 
   if (source.source_type === 'xtream') {
     setSourceModalType('xtream');
-    DOM.xtreamServerInput.value = source.server_url;
-    DOM.xtreamUserInput.value = source.username || '';
-    DOM.xtreamPassInput.value = '';
-    DOM.xtreamPassInput.placeholder = 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية';
+    if (DOM.xtreamServerInput) DOM.xtreamServerInput.value = source.server_url;
+    if (DOM.xtreamUserInput) DOM.xtreamUserInput.value = source.username || '';
+    if (DOM.xtreamPassInput) {
+      DOM.xtreamPassInput.value = '';
+      DOM.xtreamPassInput.placeholder = 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية';
+    }
   } else {
     setSourceModalType('m3u');
-    DOM.sourceUrlInput.value = source.server_url;
+    if (DOM.sourceUrlInput) DOM.sourceUrlInput.value = source.server_url;
   }
 
   openModal(DOM.modalSource);
@@ -750,12 +851,12 @@ function switchTab(tabName) {
 
 function openModal(modalEl) {
   if (!modalEl) return;
-  modalEl.classList.add('active');
+  modalEl.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
 
 function closeModal() {
-  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'));
   document.body.style.overflow = '';
 }
 
