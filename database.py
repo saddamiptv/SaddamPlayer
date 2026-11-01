@@ -243,28 +243,32 @@ def create_or_rotate_pin(device_id: int, expiry_minutes: int = 52560000) -> str:
 
 def set_device_pin(device_id: int, pin: str, expiry_minutes: int = 52560000) -> str:
     """Sets the permanent pairing PIN for a device (never expires)."""
-    pin_h = hash_pin(str(pin).strip())
+    pin_str = str(pin).strip()
+    pin_h = hash_pin(pin_str)
     now = int(time.time())
     expires_at = now + (expiry_minutes * 60)
 
     with get_db() as conn:
         cursor = conn.cursor()
-        # Invalidate old active codes
-        cursor.execute("UPDATE device_pairing_codes SET consumed_at = ? WHERE device_id = ? AND consumed_at IS NULL", (now, device_id))
-        cursor.execute("""
-            INSERT INTO device_pairing_codes (device_id, pin_hash, expires_at, attempt_count, consumed_at, created_at)
-            VALUES (?, ?, ?, 0, NULL, ?)
-        """, (device_id, pin_h, expires_at, now))
+        cursor.execute("SELECT id FROM device_pairing_codes WHERE device_id = ? AND pin_hash = ?", (device_id, pin_h))
+        existing = cursor.fetchone()
+        if not existing:
+            cursor.execute("""
+                INSERT INTO device_pairing_codes (device_id, pin_hash, expires_at, attempt_count, consumed_at, created_at)
+                VALUES (?, ?, ?, 0, NULL, ?)
+            """, (device_id, pin_h, expires_at, now))
+        else:
+            cursor.execute("UPDATE device_pairing_codes SET expires_at = ?, consumed_at = NULL WHERE id = ?", (expires_at, existing['id']))
         conn.commit()
 
-    return str(pin).strip()
+    return pin_str
 
 
 def verify_device_credentials(mac: str, pin: str) -> Optional[Dict[str, Any]]:
     """
     Verifies MAC and PIN against database.
     - Checks device status
-    - Checks active PIN, expiration, and attempts
+    - Checks permanent device pairing PIN
     - Returns device dict on success, None on failure
     """
     clean_mac = normalize_mac(mac)
@@ -281,34 +285,34 @@ def verify_device_credentials(mac: str, pin: str) -> Optional[Dict[str, Any]]:
         if device_dict.get('status') == 'blocked':
             return None
 
-        # Look for valid pairing code
+        # Look for valid pairing code for this device (order by latest first)
         cursor.execute("""
             SELECT * FROM device_pairing_codes
-            WHERE device_id = ? AND consumed_at IS NULL AND expires_at > ?
-            ORDER BY created_at DESC LIMIT 1
-        """, (device_dict['id'], now))
-        code_row = cursor.fetchone()
+            WHERE device_id = ?
+            ORDER BY id DESC
+        """, (device_dict['id'],))
+        codes = cursor.fetchall()
 
-        if not code_row:
+        if not codes:
             return None
 
-        # Check PIN
-        stored_hash = code_row['pin_hash']
-        if verify_pin(pin, stored_hash):
-            # Consume PIN if one-time use policy (mark consumed)
-            # Note: For demo ease we can allow reuse or consume. SDP 4.3 says:
-            # "إبطال PIN إذا كانت سياسة النظام تستخدمه لمرة واحدة."
-            # We mark it consumed and rotate or keep active for 15 mins
-            return device_dict
-        else:
-            # Increment attempt counter
-            cursor.execute("UPDATE device_pairing_codes SET attempt_count = attempt_count + 1 WHERE id = ?", (code_row['id'],))
-            conn.commit()
-            return None
+        # Check PIN against all assigned codes for this device
+        for code_row in codes:
+            stored_hash = code_row['pin_hash']
+            if verify_pin(pin, stored_hash):
+                # Ensure device status is active
+                cursor.execute("UPDATE devices SET status = 'active', updated_at = ? WHERE id = ?", (now, device_dict['id']))
+                conn.commit()
+                return device_dict
+
+        # If no code matched, increment attempt counter
+        cursor.execute("UPDATE device_pairing_codes SET attempt_count = attempt_count + 1 WHERE id = ?", (codes[0]['id'],))
+        conn.commit()
+        return None
 
 
-def create_device_session(device_id: int, lifetime_hours: int = 24) -> str:
-    """Creates a high-entropy device session."""
+def create_device_session(device_id: int, lifetime_hours: int = 87600) -> str:
+    """Creates a permanent high-entropy device session (valid for 10 years)."""
     raw_token = generate_session_token()
     tok_hash = hash_token(raw_token)
     now = int(time.time())
@@ -380,8 +384,40 @@ def unlink_device(device_id: int):
 
 # IPTV Sources Management
 
+def ensure_device_has_sources(target_device_id: int):
+    """
+    Ensures a newly paired or active device doesn't lose custom IPTV sources.
+    If the target device has 0 sources, checks if any other device (like demo device 1
+    or a previously paired device) has custom user-added sources (id > 2) and automatically
+    migrates/copies them to this device so the user's added sources are never lost after pairing!
+    """
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM iptv_sources WHERE device_id = ?", (target_device_id,))
+        count = cursor.fetchone()[0]
+        if count == 0:
+            cursor.execute("""
+                SELECT name, source_type, server_url, username, password_encrypted, description, status, enabled 
+                FROM iptv_sources 
+                WHERE name NOT IN ('باقة القنوات الرياضية والإخبارية المفتوحة (M3U)', 'خادم SADDAM Xtream Demo API')
+                ORDER BY id ASC
+            """)
+            custom_sources = cursor.fetchall()
+            if custom_sources:
+                for src in custom_sources:
+                    cursor.execute("""
+                        INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                    """, (target_device_id, src["name"], src["source_type"], src["server_url"], src["username"], src["password_encrypted"], src["description"], src["status"], src["enabled"], now, now))
+                cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, target_device_id))
+                conn.commit()
+                log_audit("system", str(target_device_id), "sources_migrated_on_pairing", "device", str(target_device_id), {"count": len(custom_sources)})
+
+
 def get_device_sources(device_id: int, only_enabled: bool = False, mask_password: bool = True) -> List[Dict[str, Any]]:
     """Retrieves all IPTV sources for a device."""
+    ensure_device_has_sources(device_id)
     with get_db() as conn:
         cursor = conn.cursor()
         if only_enabled:

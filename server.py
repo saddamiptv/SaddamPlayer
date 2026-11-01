@@ -331,9 +331,9 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 try:
                     cursor.execute("""
                         SELECT id, token FROM device_sessions
-                        WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ?
+                        WHERE device_id = ? AND revoked_at IS NULL
                         ORDER BY id DESC LIMIT 1
-                    """, (dev["id"], int(time.time())))
+                    """, (dev["id"],))
                     active_sess = cursor.fetchone()
                     if active_sess:
                         has_active = True
@@ -341,11 +341,19 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     cursor.execute("""
                         SELECT id FROM device_sessions
-                        WHERE device_id = ? AND revoked_at IS NULL AND expires_at > ?
+                        WHERE device_id = ? AND revoked_at IS NULL
                         ORDER BY id DESC LIMIT 1
-                    """, (dev["id"], int(time.time())))
+                    """, (dev["id"],))
                     active_sess = cursor.fetchone()
                     has_active = active_sess is not None
+
+                # Also verify if device has sources registered
+                cursor.execute("SELECT COUNT(*) FROM iptv_sources WHERE device_id = ? AND enabled = 1", (dev["id"],))
+                src_count = cursor.fetchone()[0]
+                if src_count > 0:
+                    has_active = True
+                    if not token_val:
+                        token_val = db.create_device_session(dev["id"])
 
                 return self.send_json(200, {
                     "paired": has_active,
@@ -473,8 +481,12 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                     "error": "هذا الجهاز موقوف أو معطل حالياً من قبل إدارة النظام."
                 })
 
-            # Success
+            # Success - reactivate device and preserve sources
             security.reset_rate_limit(rate_key)
+            with db.get_db() as conn:
+                conn.execute("UPDATE devices SET status = 'active', updated_at = ? WHERE id = ?", (int(time.time()), device["id"]))
+                conn.commit()
+            db.ensure_device_has_sources(device["id"])
             token = db.create_device_session(device["id"])
             db.log_audit("device_session", str(device["id"]), "pairing_successful", "device", str(device["id"]))
 
@@ -581,9 +593,10 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(400, {"error": "رمز الجهاز (MAC) مطلوب"})
             label = body.get("label", "Android TV Device")
             platform = body.get("platform", "Android")
-            app_version = body.get("app_version", "1.3.0")
+            app_version = body.get("app_version", "1.4.0")
             client_pin = body.get("pin")
             dev = db.register_or_get_device(mac, label, platform, app_version)
+            db.ensure_device_has_sources(dev["id"])
             if client_pin and len(str(client_pin).strip()) == 6 and str(client_pin).strip().isdigit():
                 pin = db.set_device_pin(dev["id"], str(client_pin).strip(), expiry_minutes=52560000)
             else:
