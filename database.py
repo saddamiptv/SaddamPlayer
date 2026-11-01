@@ -101,6 +101,10 @@ def init_db():
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE iptv_sources ADD COLUMN expires_at TEXT")
+        except Exception:
+            pass
 
         # 5. Audit Logs Table
         cursor.execute("""
@@ -468,12 +472,14 @@ def add_iptv_source(device_id: int, data: dict) -> Dict[str, Any]:
     except Exception:
         pass
 
+    expires_at = data.get("expires_at")
+
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'untested', ?, NULL, ?, ?)
-        """, (device_id, name, source_type, server_url, username, password, description, enabled, now, now))
+            INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'untested', ?, NULL, ?, ?, ?)
+        """, (device_id, name, source_type, server_url, username, password, description, enabled, expires_at, now, now))
         source_id = cursor.lastrowid
 
         # Bump sync_version on device

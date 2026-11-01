@@ -362,40 +362,83 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                     "token": token_val
                 })
 
-        if path == "/api/v1/devices/sources":
+        if path in ("/api/v1/devices/sources", "/api/v1/devices/playlists"):
             device = self.authenticate_device()
-            if not device:
-                req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
-                if req_mac:
-                    clean_mac = security.normalize_mac(req_mac)
-                    with db.get_db() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
-                        row = cursor.fetchone()
-                        if row:
-                            device = dict(row)
+            req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
+            req_key = self.headers.get("X-Device-Key") or query.get("key", [""])[0] or query.get("pin", [""])[0]
+
+            if req_mac and req_key:
+                device = db.verify_device_credentials(req_mac, req_key)
+
+            if not device and req_mac:
+                clean_mac = security.normalize_mac(req_mac)
+                with db.get_db() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
+                    row = cursor.fetchone()
+                    if row:
+                        device = dict(row)
 
             if not device:
                 return self.send_json(200, {
+                    "success": False,
                     "device_id": None,
                     "sync_version": 1,
-                    "sources": []
+                    "sources": [],
+                    "playlists": []
                 })
 
             if device.get("status") in ("disabled", "suspended", "blocked"):
                 return self.send_json(403, {
+                    "success": False,
                     "device_id": device["id"],
                     "status": device["status"],
                     "error": "تم إيقاف هذا الجهاز من قبل إدارة النظام",
-                    "sources": []
+                    "sources": [],
+                    "playlists": []
                 })
 
             # Strictly return ONLY sources added for THIS specific device
-            sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
+            sources = db.get_device_sources(device["id"], only_enabled=False, mask_password=False)
+            playlists = []
+            for s in sources:
+                status = "active"
+                if s.get("status") in ("expired", "STATUS_EXPIRED") or (s.get("last_error_code") and "EXPIRED" in str(s.get("last_error_code")).upper()):
+                    status = "expired"
+                elif not s.get("enabled"):
+                    status = "disabled"
+                elif s.get("expires_at"):
+                    try:
+                        exp_val = s["expires_at"]
+                        if str(exp_val).isdigit():
+                            exp_ts = int(exp_val)
+                            if exp_ts < 10000000000:
+                                exp_ts *= 1000
+                            if time.time() * 1000 > exp_ts:
+                                status = "expired"
+                    except Exception:
+                        pass
+
+                playlists.append({
+                    "id": s["id"],
+                    "name": s["name"],
+                    "source_type": s["source_type"],
+                    "server_url": s["server_url"],
+                    "username": s.get("username"),
+                    "password": s.get("password") or s.get("password_encrypted"),
+                    "status": status,
+                    "is_enabled": bool(s.get("enabled", 1)),
+                    "expires_at": s.get("expires_at"),
+                    "created_at": s.get("created_at")
+                })
+
+            enabled_sources = [s for s in sources if s.get("enabled", 1)]
             return self.send_json(200, {
+                "success": True,
                 "device_id": device["id"],
                 "sync_version": device["sync_version"],
-                "sources": sources
+                "sources": enabled_sources,
+                "playlists": playlists
             })
 
         if path == "/api/v1/devices/sync":
@@ -606,6 +649,88 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 "device_code": dev["device_code"],
                 "pairing_pin": pin,
                 "pin_expires_minutes": None
+            })
+
+        # 7b. Android App: Sync Playlists with Exact MAC and Device Key (SPD Section 5)
+        if path in ("/api/v1/devices/playlists", "/api/v1/devices/sync-playlists", "/api/v1/devices/sources"):
+            mac = body.get("mac_address") or body.get("mac") or self.headers.get("X-Device-MAC", "")
+            key = body.get("device_key") or body.get("key") or body.get("pin") or self.headers.get("X-Device-Key", "")
+            clean_mac = security.normalize_mac(mac)
+            clean_pin = str(key).strip()
+
+            if not clean_mac or not clean_pin:
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "رمز الجهاز (MAC) ومفتاح الجهاز (Device Key) مطلوبان معاً.",
+                    "playlists": []
+                })
+
+            device = db.verify_device_credentials(clean_mac, clean_pin)
+            if not device:
+                # Check if device is registered at all
+                with db.get_db() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM devices WHERE device_code = ?", (clean_mac,))
+                    dev_row = cursor.fetchone()
+                if not dev_row:
+                    return self.send_json(401, {
+                        "success": False,
+                        "error": "الجهاز غير مسجل أو البيانات غير صحيحة",
+                        "playlists": []
+                    })
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "مفتاح الجهاز غير متطابق مع هذا الـ MAC",
+                    "playlists": []
+                })
+
+            if device.get("status") in ("disabled", "suspended", "blocked"):
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "تم إيقاف هذا الجهاز من قبل إدارة النظام",
+                    "playlists": []
+                })
+
+            # Retrieve all sources registered for THIS specific device
+            sources = db.get_device_sources(device["id"], only_enabled=False, mask_password=False)
+            playlists = []
+            for s in sources:
+                status = "active"
+                if s.get("status") in ("expired", "STATUS_EXPIRED") or (s.get("last_error_code") and "EXPIRED" in str(s.get("last_error_code")).upper()):
+                    status = "expired"
+                elif not s.get("enabled"):
+                    status = "disabled"
+                elif s.get("expires_at"):
+                    try:
+                        exp_val = s["expires_at"]
+                        if str(exp_val).isdigit():
+                            exp_ts = int(exp_val)
+                            if exp_ts < 10000000000:
+                                exp_ts *= 1000
+                            if time.time() * 1000 > exp_ts:
+                                status = "expired"
+                    except Exception:
+                        pass
+
+                playlists.append({
+                    "id": s["id"],
+                    "name": s["name"],
+                    "source_type": s["source_type"],
+                    "server_url": s["server_url"],
+                    "username": s.get("username"),
+                    "password": s.get("password") or s.get("password_encrypted"),
+                    "status": status,
+                    "is_enabled": bool(s.get("enabled", 1)),
+                    "expires_at": s.get("expires_at"),
+                    "created_at": s.get("created_at")
+                })
+
+            return self.send_json(200, {
+                "success": True,
+                "device_id": device["id"],
+                "sync_version": device["sync_version"],
+                "playlists": playlists,
+                "sources": [s for s in sources if s.get("enabled", 1)]
             })
 
         # 8. Android App: Diagnostics
