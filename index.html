@@ -58,6 +58,12 @@
           <span>الرئيسية</span>
         </button>
 
+        <!-- Playlists Dashboard Button (Shown when authenticated) -->
+        <button id="btnHeaderPlaylists" class="btn btn-secondary btn-sm hidden" title="عرض وإدارة قوائم التشغيل">
+          <i class="fa-solid fa-satellite-dish"></i>
+          <span>قوائم التشغيل</span>
+        </button>
+
         <!-- Admin Panel Button (Shown when authenticated) -->
         <a href="admin.html" id="btnAdminAccess" class="btn btn-primary btn-sm hidden" title="الانتقال إلى لوحة الإدارة">
           <i class="fa-solid fa-chart-pie"></i>
@@ -158,7 +164,7 @@
               </div>
               <h3 class="portal-card-title">إقران جهاز المشترك</h3>
               <p class="portal-card-desc">
-                إدخال كود <strong>MAC Address</strong> و <strong>Device Key</strong> الخاص بجهاز محدد للتحقق منه وإدارة قنواته ومصادر البث التابعة له حصراً.
+                إدخال كود <strong>MAC Address</strong> و <strong>Device Key</strong> الخاص بجهاز محدد لربطه بحسابك وتفعيل وصوله إلى قوائم البث.
               </p>
             </div>
             <button type="button" class="btn btn-primary" id="btnOpenPairingView" style="width: 100%;">
@@ -167,7 +173,24 @@
             </button>
           </div>
 
-          <!-- Button 2: Admin Panel (لوحة الإدارة) -->
+          <!-- Button 2: Manage Playlists (إدارة قوائم التشغيل) -->
+          <div class="portal-card" id="cardPlaylists">
+            <div>
+              <div class="portal-card-icon green">
+                <i class="fa-solid fa-satellite-dish"></i>
+              </div>
+              <h3 class="portal-card-title">إدارة قوائم التشغيل</h3>
+              <p class="portal-card-desc">
+                عرض وإدارة قوائم التشغيل المحفوظة بحسابك بشكل دائم حتى انتهاء صلاحيتها وتوفيرها لجميع أجهزتك المقترنة.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="btnOpenPlaylistsView" style="width: 100%;">
+              <i class="fa-solid fa-list-check"></i>
+              <span>عرض قوائم التشغيل</span>
+            </button>
+          </div>
+
+          <!-- Button 3: Admin Panel (لوحة الإدارة) -->
           <a href="admin.html" class="portal-card" id="cardAdminPanel">
             <div>
               <div class="portal-card-icon purple">
@@ -286,6 +309,10 @@
                 <i class="fa-solid fa-house"></i>
                 <span>البوابة الرئيسية</span>
               </button>
+              <button id="btnPairNewFromDash" class="btn btn-secondary btn-sm" title="إقران جهاز إضافي بحسابك">
+                <i class="fa-solid fa-plus-circle"></i>
+                <span>إقران جهاز آخر</span>
+              </button>
               <a href="admin.html" class="btn btn-secondary btn-sm" title="لوحة الإدارة">
                 <i class="fa-solid fa-chart-pie"></i>
                 <span>لوحة الإدارة</span>
@@ -332,7 +359,7 @@
           <div class="content-card-header">
             <h2 class="card-title">
               <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
-              <span>قوائم التشغيل التابعة لهذا الجهاز حصراً</span>
+              <span>قوائم التشغيل التابعة للحساب (متاحة لجميع أجهزتك المقترنة)</span>
             </h2>
 
             <div style="display: flex; gap: 8px;">
@@ -417,6 +444,15 @@
               <input type="password" id="xtreamPassInput" class="form-input latin-code" placeholder="Password">
             </div>
           </div>
+        </div>
+
+        <!-- Optional Expiration Date Field -->
+        <div class="form-group" style="margin-top: 10px;">
+          <label class="form-label" for="sourceExpiresAtInput">
+            <span>تاريخ انتهاء الصلاحية (اختياري)</span>
+            <span class="form-label-hint">تظل القائمة محفوظة وتعمل حتى هذا التاريخ</span>
+          </label>
+          <input type="date" id="sourceExpiresAtInput" class="form-input latin-code">
         </div>
 
         <div style="display: flex; gap: 10px; margin-top: 16px;">

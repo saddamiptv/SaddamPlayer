@@ -24,7 +24,7 @@ import database as db
 import security
 
 PORT = int(os.environ.get("PORT", 8080))
-PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "public")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def probe_xtream_account(base_url: str, username: str, password: str, timeout: int = 8) -> Tuple[str, str, str]:
@@ -280,13 +280,23 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # 1. API: Web Device Info
+        # 1. API: Web Device & Account Info
         if path == "/api/web/me":
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "الجلسة غير صالحة أو منتهية"})
+
+            account_devices = db.get_account_devices(admin_sess["slot"]) if admin_sess else []
+            if not device and account_devices:
+                device = account_devices[0]
+
             return self.send_json(200, {
                 "success": True,
+                "admin": {
+                    "slot": admin_sess["slot"],
+                    "username": admin_sess["username"]
+                } if admin_sess else None,
                 "device": {
                     "id": device["id"],
                     "device_code": device["device_code"],
@@ -298,27 +308,56 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                     "sync_version": device["sync_version"],
                     "last_seen_at": device["last_seen_at"],
                     "session_expires_at": device.get("session_expires_at")
-                }
+                } if device else None,
+                "devices": [
+                    {
+                        "id": d["id"],
+                        "device_code": d["device_code"],
+                        "device_code_masked": security.mask_mac(d["device_code"]),
+                        "device_label": d["device_label"],
+                        "platform": d["platform"],
+                        "status": d["status"]
+                    } for d in account_devices
+                ]
             })
 
-        # 2. API: Web Device Sources
+        # 2. API: Web Device & Account Sources
         if path == "/api/web/sources":
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
-            sources = db.get_device_sources(device["id"])
+
+            if admin_sess:
+                # Core business rule: A playlist belongs to the user's account, not to a specific device.
+                sources = db.get_account_sources(admin_sess["slot"])
+            elif device:
+                sources = db.get_device_sources(device["id"])
+            else:
+                sources = []
+
             return self.send_json(200, {"success": True, "sources": sources})
 
         # 3. API: Web Android Sync Preview
         if path == "/api/web/sync-preview":
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
-            sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
+
+            if admin_sess:
+                sources = db.get_account_sources(admin_sess["slot"], only_enabled=True, mask_password=False)
+                dev_id = device["id"] if device else None
+                sync_ver = device["sync_version"] if device else 1
+            else:
+                sources = db.get_device_sources(device["id"], only_enabled=True, mask_password=False)
+                dev_id = device["id"]
+                sync_ver = device["sync_version"]
+
             return self.send_json(200, {
                 "success": True,
-                "device_id": device["id"],
-                "sync_version": device["sync_version"],
+                "device_id": dev_id,
+                "sync_version": sync_ver,
                 "active_sources_count": len(sources),
                 "payload": [
                     {
@@ -576,7 +615,8 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
         # 1. Web Device Pairing (Gated by Admin Session per SPD Section 2 & 3)
         if path == "/api/web/pair":
-            if not self.authenticate_admin():
+            admin_sess = self.authenticate_admin()
+            if not admin_sess:
                 return self.send_json(401, {
                     "success": False,
                     "error": "غير مصرح. يرجى تسجيل الدخول إلى الموقع بحساب المشرف أولاً للوصول إلى ربط الأجهزة."
@@ -619,13 +659,11 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                     "error": "هذا الجهاز موقوف أو معطل حالياً من قبل إدارة النظام."
                 })
 
-            # Success - reactivate device and preserve sources
+            # Success - link device to admin account, reactivate, and preserve all existing playlists
             security.reset_rate_limit(rate_key)
-            with db.get_db() as conn:
-                conn.execute("UPDATE devices SET status = 'active', updated_at = ? WHERE id = ?", (int(time.time()), device["id"]))
-                conn.commit()
+            db.link_device_to_account(device["id"], admin_sess["slot"])
             token = db.create_device_session(device["id"])
-            db.log_audit("device_session", str(device["id"]), "pairing_successful", "device", str(device["id"]))
+            db.log_audit("admin", str(admin_sess["slot"]), "device_paired", "device", str(device["id"]), {"mac": device["device_code"]})
 
             return self.send_json(200, {
                 "success": True,
@@ -638,10 +676,11 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 }
             }, cookies={"saddam_session": token})
 
-        # 2. Web Device: Add IPTV Source (SDP Section 7.2 & 7.3)
+        # 2. Web Device / Account: Add IPTV Source (SDP Section 7.2 & 7.3)
         if path == "/api/web/sources":
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
 
             name = body.get("name", "").strip()
@@ -654,19 +693,23 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             if not is_safe:
                 return self.send_json(400, {"success": False, "error": msg})
 
-            new_source = db.add_iptv_source(device["id"], body)
+            dev_id = device["id"] if device else None
+            slot = admin_sess["slot"] if admin_sess else (device.get("account_slot") or 1)
+
+            new_source = db.add_iptv_source(dev_id, body, account_slot=slot)
             return self.send_json(201, {"success": True, "source": new_source})
 
-        # 3. Web Device: Test IPTV Source
+        # 3. Web Device / Account: Test IPTV Source
         if path.startswith("/api/web/sources/") and path.endswith("/test"):
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
 
             source_id = int(path.split("/")[4])
             with db.get_db() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device["id"]))
+                cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
                 source = cursor.fetchone()
 
             if not source:
@@ -698,14 +741,17 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 "last_tested_at": int(time.time())
             })
 
-        # 4. Web Device: Toggle Source
+        # 4. Web Device / Account: Toggle Source
         if path.startswith("/api/web/sources/") and path.endswith("/toggle"):
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
             source_id = int(path.split("/")[4])
             enabled = body.get("enabled", True)
-            ok = db.toggle_iptv_source(source_id, device["id"], enabled)
+            dev_id = device["id"] if device else None
+            slot = admin_sess["slot"] if admin_sess else None
+            ok = db.toggle_iptv_source(source_id, dev_id, account_slot=slot, enabled=enabled)
             return self.send_json(200, {"success": ok})
 
         # 5. Web Device: Revoke Session (Logout)
@@ -716,12 +762,18 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "تم إنهاء الجلسة بنجاح"})
 
         # 6. Web Device: Unlink Device (SDP Section 5.4)
-        if path == "/api/web/device/unlink":
+        if path in ("/api/web/device/unlink", "/api/web/unlink"):
             device = self.authenticate_device()
             if not device:
-                return self.send_json(401, {"success": False, "error": "غير مصرح"})
-            db.unlink_device(device["id"])
-            return self.send_json(200, {"success": True, "message": "تم إلغاء ربط الجهاز بنجاح"})
+                admin_sess = self.authenticate_admin()
+                if not admin_sess:
+                    return self.send_json(401, {"success": False, "error": "غير مصرح"})
+            if device:
+                db.unlink_device(device["id"])
+            return self.send_json(200, {
+                "success": True,
+                "message": "تم إلغاء ربط الجهاز بنجاح"
+            }, cookies={"saddam_session": "deleted; Max-Age=0"})
 
         # 7. Android App: Register Device (SDP Section 10)
         if path == "/api/v1/devices/register":
@@ -1162,11 +1214,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         body = self.parse_json_body()
 
         if path.startswith("/api/web/sources/"):
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
             source_id = int(path.split("/")[4])
-            res = db.update_iptv_source(source_id, device["id"], body)
+            dev_id = device["id"] if device else None
+            slot = admin_sess["slot"] if admin_sess else None
+            res = db.update_iptv_source(source_id, dev_id, body, account_slot=slot)
             if res:
                 return self.send_json(200, {"success": True, "source": res})
             return self.send_json(404, {"success": False, "error": "تعذر تحديث المصدر"})
@@ -1197,11 +1252,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
 
         if path.startswith("/api/web/sources/"):
+            admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
-            if not device:
+            if not admin_sess and not device:
                 return self.send_json(401, {"success": False, "error": "غير مصرح"})
             source_id = int(path.split("/")[4])
-            ok = db.delete_iptv_source(source_id, device["id"])
+            dev_id = device["id"] if device else None
+            slot = admin_sess["slot"] if admin_sess else None
+            ok = db.delete_iptv_source(source_id, dev_id, account_slot=slot)
             if ok:
                 return self.send_json(200, {"success": True, "message": "تم حذف المصدر بنجاح"})
             return self.send_json(404, {"success": False, "error": "المصدر غير موجود"})
@@ -1268,6 +1326,9 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
         # Security check: Block direct access to database, python code, config, logs, or dotfiles
         clean_name = os.path.basename(file_name).lower()
+        parts = [p.lower() for p in file_name.replace("\\", "/").split("/")]
+        if "deletion" in parts:
+            return self.send_json(403, {"error": "الوصول إلى هذا المجلد محظور"})
         _, ext = os.path.splitext(clean_name)
         forbidden_extensions = {".py", ".db", ".json", ".sqlite", ".sqlite3", ".env", ".log", ".sh", ".bat", ".md"}
         forbidden_names = {"admin_config.json", "requirements.txt", "saddam_iptv.db"}

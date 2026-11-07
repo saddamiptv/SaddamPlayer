@@ -108,6 +108,19 @@ def init_db():
             cursor.execute("ALTER TABLE iptv_sources ADD COLUMN expires_at TEXT")
         except Exception:
             pass
+        try:
+            cursor.execute("ALTER TABLE iptv_sources ADD COLUMN account_slot INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE devices ADD COLUMN account_slot INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            cursor.execute("UPDATE iptv_sources SET account_slot = 1 WHERE account_slot IS NULL")
+            cursor.execute("UPDATE devices SET account_slot = 1 WHERE account_slot IS NULL")
+        except Exception:
+            pass
 
         # 5. Audit Logs Table
         cursor.execute("""
@@ -167,9 +180,10 @@ def init_db():
         except Exception:
             pass
 
-        # Clean up orphaned sources whose device_id is no longer valid
+        # Playlists belong to the user's account, not to a specific device.
+        # NEVER delete unexpired or orphaned sources on startup or device operations.
         try:
-            cursor.execute("DELETE FROM iptv_sources WHERE device_id NOT IN (SELECT id FROM devices)")
+            cursor.execute("UPDATE iptv_sources SET account_slot = 1 WHERE account_slot IS NULL")
         except Exception:
             pass
 
@@ -493,24 +507,86 @@ def unlink_device(device_id: int):
     log_audit("device_session", str(device_id), "device_unlinked", "device", str(device_id))
 
 
-# IPTV Sources Management
-
-def get_device_sources(device_id: int, only_enabled: bool = False, mask_password: bool = True) -> List[Dict[str, Any]]:
-    """
-    Retrieves all IPTV sources belonging strictly to this device_id.
-    Strictly isolated: does NOT copy or migrate sources from other devices.
-    """
+def link_device_to_account(device_id: int, account_slot: int) -> bool:
+    """Links a device to an admin/user account slot without affecting any playlists."""
+    now = int(time.time())
     with get_db() as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE devices 
+            SET account_slot = ?, status = 'active', updated_at = ? 
+            WHERE id = ?
+        """, (account_slot, now, device_id))
+        conn.commit()
+    log_audit("admin", str(account_slot), "device_linked_to_account", "device", str(device_id), {"account_slot": account_slot})
+    return True
+
+
+def get_account_devices(account_slot: int) -> List[Dict[str, Any]]:
+    """Retrieves all active devices linked to this account slot."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM devices
+            WHERE account_slot = ? AND status != 'deleted'
+            ORDER BY last_seen_at DESC, id DESC
+        """, (account_slot,))
+        return [dict(r) for r in cursor.fetchall()]
+
+
+# IPTV Sources Management
+
+def get_account_sources(account_slot: int, only_enabled: bool = False, mask_password: bool = True) -> List[Dict[str, Any]]:
+    """
+    Retrieves all IPTV sources belonging to this account.
+    Core business rule: A playlist belongs to the user's account, not to a specific device.
+    Device pairing must never delete or replace playlists.
+    A playlist remains available until its own expiration date.
+    """
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT s.*
+            FROM iptv_sources s
+            WHERE (s.account_slot = ? OR s.device_id IN (SELECT id FROM devices WHERE account_slot = ?))
+        """
         if only_enabled:
-            cursor.execute("SELECT * FROM iptv_sources WHERE device_id = ? AND enabled = 1 ORDER BY id DESC", (device_id,))
-        else:
-            cursor.execute("SELECT * FROM iptv_sources WHERE device_id = ? ORDER BY id DESC", (device_id,))
+            query += " AND s.enabled = 1"
+        query += " ORDER BY s.id DESC"
+
+        cursor.execute(query, (account_slot, account_slot))
         rows = cursor.fetchall()
         result = []
+        seen_ids = set()
         for r in rows:
+            if r['id'] in seen_ids:
+                continue
+            seen_ids.add(r['id'])
             d = dict(r)
             d['is_enabled'] = d.get('enabled', 1)
+
+            # Check expiration lifecycle
+            status = d.get('status', 'untested')
+            is_expired = False
+            if status in ('expired', 'STATUS_EXPIRED') or (d.get('last_error_code') and 'EXPIRED' in str(d.get('last_error_code')).upper()):
+                is_expired = True
+                status = 'expired'
+            elif d.get('expires_at'):
+                try:
+                    exp_val = str(d['expires_at']).strip()
+                    if exp_val.isdigit():
+                        exp_ts = int(exp_val)
+                        if exp_ts < 10000000000:
+                            exp_ts *= 1000
+                        if (now * 1000) > exp_ts:
+                            is_expired = True
+                            status = 'expired'
+                except Exception:
+                    pass
+            d['is_expired'] = is_expired
+            d['status'] = status
+
             # Mask password for web frontend, but preserve for Android client
             raw_pwd = d.get('password_encrypted') or ""
             d['has_password'] = bool(raw_pwd)
@@ -524,8 +600,60 @@ def get_device_sources(device_id: int, only_enabled: bool = False, mask_password
         return result
 
 
-def add_iptv_source(device_id: int, data: dict) -> Dict[str, Any]:
-    """Adds a new IPTV source (M3U / Xtream) and increments sync_version."""
+def get_device_sources(device_id: int, only_enabled: bool = False, mask_password: bool = True) -> List[Dict[str, Any]]:
+    """
+    Retrieves all IPTV sources directly linked to this device_id.
+    Ensures strict device-level playlist isolation for Android TV clients.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if only_enabled:
+            cursor.execute("SELECT * FROM iptv_sources WHERE device_id = ? AND enabled = 1 ORDER BY id DESC", (device_id,))
+        else:
+            cursor.execute("SELECT * FROM iptv_sources WHERE device_id = ? ORDER BY id DESC", (device_id,))
+        rows = cursor.fetchall()
+        result = []
+        now = int(time.time())
+        for r in rows:
+            d = dict(r)
+            d['is_enabled'] = d.get('enabled', 1)
+            status = d.get('status', 'untested')
+            is_expired = False
+            if status in ('expired', 'STATUS_EXPIRED') or (d.get('last_error_code') and 'EXPIRED' in str(d.get('last_error_code')).upper()):
+                is_expired = True
+                status = 'expired'
+            elif d.get('expires_at'):
+                try:
+                    exp_val = str(d['expires_at']).strip()
+                    if exp_val.isdigit():
+                        exp_ts = int(exp_val)
+                        if exp_ts < 10000000000:
+                            exp_ts *= 1000
+                        if (now * 1000) > exp_ts:
+                            is_expired = True
+                            status = 'expired'
+                except Exception:
+                    pass
+            d['is_expired'] = is_expired
+            d['status'] = status
+
+            raw_pwd = d.get('password_encrypted') or ""
+            d['has_password'] = bool(raw_pwd)
+            if mask_password:
+                if raw_pwd:
+                    d['password_encrypted'] = "••••••••"
+            else:
+                d['password'] = raw_pwd
+                d['password_encrypted'] = raw_pwd
+            result.append(d)
+        return result
+
+
+def add_iptv_source(device_id: Optional[int], data: dict, account_slot: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Adds a new IPTV source (M3U / Xtream) and increments sync_version.
+    Uses independent records and does NOT overwrite or delete existing playlists.
+    """
     now = int(time.time())
     name = data.get("name", "").strip()
     source_type = data.get("source_type", "m3u").lower()
@@ -552,26 +680,40 @@ def add_iptv_source(device_id: int, data: dict) -> Dict[str, Any]:
 
     expires_at = data.get("expires_at")
 
+    # Resolve account_slot
+    resolved_slot = account_slot
+    if not resolved_slot and device_id:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT account_slot FROM devices WHERE id = ?", (device_id,))
+            r = cursor.fetchone()
+            if r and 'account_slot' in r.keys() and r['account_slot']:
+                resolved_slot = r['account_slot']
+    if not resolved_slot:
+        resolved_slot = 1
+
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, expires_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'untested', ?, NULL, ?, ?, ?)
-        """, (device_id, name, source_type, server_url, username, password, description, enabled, expires_at, now, now))
+            INSERT INTO iptv_sources (device_id, account_slot, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'untested', ?, NULL, ?, ?, ?)
+        """, (device_id, resolved_slot, name, source_type, server_url, username, password, description, enabled, expires_at, now, now))
         source_id = cursor.lastrowid
 
-        # Bump sync_version on device
-        cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, device_id))
+        # Bump sync_version on device and account
+        if device_id:
+            cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, device_id))
+        cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE account_slot = ?", (now, resolved_slot))
         conn.commit()
 
         cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
         res = dict(cursor.fetchone())
-        log_audit("device_session", str(device_id), "source_added", "source", str(source_id), {"name": name, "type": source_type})
+        log_audit("account", str(resolved_slot), "source_added", "source", str(source_id), {"name": name, "type": source_type})
         return res
 
 
-def update_iptv_source(source_id: int, device_id: int, data: dict) -> Optional[Dict[str, Any]]:
-    """Updates an existing IPTV source owned by device_id."""
+def update_iptv_source(source_id: int, device_id: Optional[int], data: dict, account_slot: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Updates an existing IPTV source owned by device_id or account_slot."""
     now = int(time.time())
     name = data.get("name", "").strip()
     server_url = data.get("server_url", "").strip()
@@ -579,10 +721,17 @@ def update_iptv_source(source_id: int, device_id: int, data: dict) -> Optional[D
     new_password = data.get("password") or data.get("password_encrypted") or ""
     description = data.get("description", "").strip()
     enabled = 1 if data.get("enabled", True) else 0
+    expires_at = data.get("expires_at")
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device_id))
+        if account_slot:
+            cursor.execute("SELECT * FROM iptv_sources WHERE id = ? AND (account_slot = ? OR device_id = ?)", (source_id, account_slot, device_id))
+        elif device_id:
+            cursor.execute("SELECT * FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device_id))
+        else:
+            cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
+
         existing = cursor.fetchone()
         if not existing:
             return None
@@ -605,51 +754,76 @@ def update_iptv_source(source_id: int, device_id: int, data: dict) -> Optional[D
         else:
             pwd_to_store = existing['password_encrypted']
 
+        exp_to_store = expires_at if expires_at is not None else existing.get('expires_at')
+
         cursor.execute("""
             UPDATE iptv_sources
-            SET name = ?, server_url = ?, username = ?, password_encrypted = ?, description = ?, enabled = ?, updated_at = ?
-            WHERE id = ? AND device_id = ?
-        """, (name, server_url, username, pwd_to_store, description, enabled, now, source_id, device_id))
+            SET name = ?, server_url = ?, username = ?, password_encrypted = ?, description = ?, enabled = ?, expires_at = ?, updated_at = ?
+            WHERE id = ?
+        """, (name, server_url, username, pwd_to_store, description, enabled, exp_to_store, now, source_id))
 
-        # Bump sync version
-        cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, device_id))
+        if existing['device_id']:
+            cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, existing['device_id']))
+        if existing['account_slot']:
+            cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE account_slot = ?", (now, existing['account_slot']))
         conn.commit()
 
         cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
         res = dict(cursor.fetchone())
-        log_audit("device_session", str(device_id), "source_updated", "source", str(source_id), {"name": name})
+        log_audit("source", str(source_id), "source_updated", "source", str(source_id), {"name": name})
         return res
 
 
-def delete_iptv_source(source_id: int, device_id: int) -> bool:
-    """Deletes an IPTV source owned by device_id and updates sync_version."""
+def delete_iptv_source(source_id: int, device_id: Optional[int] = None, account_slot: Optional[int] = None) -> bool:
+    """Deletes an IPTV source owned by device_id or account_slot and updates sync_version."""
     now = int(time.time())
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device_id))
+        if account_slot:
+            cursor.execute("SELECT name, device_id, account_slot FROM iptv_sources WHERE id = ? AND (account_slot = ? OR device_id = ?)", (source_id, account_slot, device_id))
+        elif device_id:
+            cursor.execute("SELECT name, device_id, account_slot FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device_id))
+        else:
+            cursor.execute("SELECT name, device_id, account_slot FROM iptv_sources WHERE id = ?", (source_id,))
+
         row = cursor.fetchone()
         if not row:
             return False
 
-        cursor.execute("DELETE FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device_id))
-        cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, device_id))
+        cursor.execute("DELETE FROM iptv_sources WHERE id = ?", (source_id,))
+        if row['device_id']:
+            cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, row['device_id']))
+        if row['account_slot']:
+            cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE account_slot = ?", (now, row['account_slot']))
         conn.commit()
 
-        log_audit("device_session", str(device_id), "source_deleted", "source", str(source_id), {"name": row['name']})
+        log_audit("source", str(source_id), "source_deleted", "source", str(source_id), {"name": row['name']})
         return True
 
 
-def toggle_iptv_source(source_id: int, device_id: int, enabled: bool) -> bool:
-    """Toggles source enabled state for the device."""
+def toggle_iptv_source(source_id: int, device_id: Optional[int] = None, account_slot: Optional[int] = None, enabled: bool = True) -> bool:
+    """Toggles source enabled state for the device or account."""
     now = int(time.time())
     with get_db() as conn:
         cursor = conn.cursor()
         val = 1 if enabled else 0
-        cursor.execute("UPDATE iptv_sources SET enabled = ?, updated_at = ? WHERE id = ? AND device_id = ?", (val, now, source_id, device_id))
+        if account_slot:
+            cursor.execute("UPDATE iptv_sources SET enabled = ?, updated_at = ? WHERE id = ? AND (account_slot = ? OR device_id = ?)", (val, now, source_id, account_slot, device_id))
+        elif device_id:
+            cursor.execute("UPDATE iptv_sources SET enabled = ?, updated_at = ? WHERE id = ? AND device_id = ?", (val, now, source_id, device_id))
+        else:
+            cursor.execute("UPDATE iptv_sources SET enabled = ?, updated_at = ? WHERE id = ?", (val, now, source_id))
+
         if cursor.rowcount > 0:
-            cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, device_id))
+            cursor.execute("SELECT device_id, account_slot FROM iptv_sources WHERE id = ?", (source_id,))
+            row = cursor.fetchone()
+            if row:
+                if row['device_id']:
+                    cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, row['device_id']))
+                if row['account_slot']:
+                    cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE account_slot = ?", (now, row['account_slot']))
             conn.commit()
-            log_audit("device_session", str(device_id), "source_toggled", "source", str(source_id), {"enabled": val})
+            log_audit("source", str(source_id), "source_toggled", "source", str(source_id), {"enabled": val})
             return True
         return False
 
@@ -739,7 +913,11 @@ def set_device_status(device_id: int, status: str) -> bool:
 
 
 def delete_device(device_id: int) -> bool:
-    """Completely deletes a device and all its associated sources, sessions, and pins."""
+    """
+    Deletes a device and disassociates its sessions and pairing codes.
+    Crucial: Unlinks playlists from this device (sets device_id = NULL),
+    but NEVER deletes the user's account playlists.
+    """
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT device_code FROM devices WHERE id = ?", (device_id,))
@@ -748,7 +926,7 @@ def delete_device(device_id: int) -> bool:
             return False
         mac = dev["device_code"]
 
-        cursor.execute("DELETE FROM iptv_sources WHERE device_id = ?", (device_id,))
+        cursor.execute("UPDATE iptv_sources SET device_id = NULL WHERE device_id = ?", (device_id,))
         cursor.execute("DELETE FROM device_sessions WHERE device_id = ?", (device_id,))
         cursor.execute("DELETE FROM device_pairing_codes WHERE device_id = ?", (device_id,))
         cursor.execute("DELETE FROM devices WHERE id = ?", (device_id,))

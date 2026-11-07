@@ -16,6 +16,7 @@ const API_BASE = window.SADDAM_API_BASE || '';
 const state = {
   admin: null,
   device: null,
+  devices: [],
   sources: [],
   currentEditingSourceId: null
 };
@@ -75,7 +76,7 @@ async function checkSessionStatus() {
       state.admin = data.admin;
       updateHeaderForAuthenticatedAdmin();
 
-      // Check if an active device was previously paired in this browser session
+      // Check active device & load all unexpired account playlists
       await checkActiveDeviceSession();
     } else {
       setUnauthenticatedState();
@@ -93,21 +94,40 @@ async function checkActiveDeviceSession() {
       headers: { 'Accept': 'application/json' }
     });
     const data = await res.json();
-    if (res.ok && data.success && data.device) {
-      state.device = data.device;
-      showView('dashboard');
-      await loadSources();
-      return;
+    if (res.ok && data.success) {
+      if (data.device) {
+        state.device = data.device;
+      }
+      if (data.devices) {
+        state.devices = data.devices;
+      }
     }
   } catch (e) {
-    // No active device session, fallback to portal home
+    console.warn('Failed to load active device session:', e);
   }
-  showView('portal');
+
+  // Core business rule: All unexpired playlists belong to the account and remain accessible.
+  await loadSources();
+
+  const hash = window.location.hash.replace('#', '');
+  if (hash === 'pairing') {
+    showView('pairing');
+  } else if (hash === 'portal') {
+    showView('portal');
+  } else {
+    // If the account has playlists or paired devices, show dashboard directly so playlists are immediately displayed
+    if (state.sources.length > 0 || state.device) {
+      showView('dashboard');
+    } else {
+      showView('portal');
+    }
+  }
 }
 
 function updateHeaderForAuthenticatedAdmin() {
   const adminBadge = document.getElementById('adminUserBadge');
   const adminText = document.getElementById('adminUserText');
+  const btnHeaderPlaylists = document.getElementById('btnHeaderPlaylists');
   const adminAccessBtn = document.getElementById('btnAdminAccess');
   const logoutBtn = document.getElementById('btnLogout');
 
@@ -115,6 +135,7 @@ function updateHeaderForAuthenticatedAdmin() {
     adminText.textContent = `مشرف ${state.admin.slot}: ${state.admin.username}`;
     adminBadge.classList.remove('hidden');
   }
+  if (btnHeaderPlaylists) btnHeaderPlaylists.classList.remove('hidden');
   if (adminAccessBtn) adminAccessBtn.classList.remove('hidden');
   if (logoutBtn) logoutBtn.classList.remove('hidden');
 }
@@ -122,17 +143,20 @@ function updateHeaderForAuthenticatedAdmin() {
 function setUnauthenticatedState() {
   state.admin = null;
   state.device = null;
+  state.devices = [];
   state.sources = [];
 
   const adminBadge = document.getElementById('adminUserBadge');
   const headerDeviceBadge = document.getElementById('headerDeviceBadge');
   const btnHeaderPortal = document.getElementById('btnHeaderPortal');
+  const btnHeaderPlaylists = document.getElementById('btnHeaderPlaylists');
   const adminAccessBtn = document.getElementById('btnAdminAccess');
   const logoutBtn = document.getElementById('btnLogout');
 
   if (adminBadge) adminBadge.classList.add('hidden');
   if (headerDeviceBadge) headerDeviceBadge.classList.add('hidden');
   if (btnHeaderPortal) btnHeaderPortal.classList.add('hidden');
+  if (btnHeaderPlaylists) btnHeaderPlaylists.classList.add('hidden');
   if (adminAccessBtn) adminAccessBtn.classList.add('hidden');
   if (logoutBtn) logoutBtn.classList.add('hidden');
 
@@ -172,7 +196,7 @@ async function handleLoginSubmit(e) {
       state.admin = data.admin;
       updateHeaderForAuthenticatedAdmin();
       if (passwordInput) passwordInput.value = '';
-      showView('portal');
+      await checkActiveDeviceSession();
       showToast(`مرحباً بك، المشرف ${data.admin.username}`, 'success');
     } else {
       showAlert('loginAlert', data.error || 'اسم المستخدم أو كلمة المرور غير صحيحة', 'danger');
@@ -220,10 +244,32 @@ function initPortalNavigation() {
     });
   }
 
+  const cardPlaylists = document.getElementById('cardPlaylists');
+  const btnOpenPlaylists = document.getElementById('btnOpenPlaylistsView');
+  if (cardPlaylists) {
+    cardPlaylists.addEventListener('click', (e) => {
+      e.preventDefault();
+      showView('dashboard');
+    });
+  }
+  if (btnOpenPlaylists) {
+    btnOpenPlaylists.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showView('dashboard');
+    });
+  }
+
   const btnHeaderPortal = document.getElementById('btnHeaderPortal');
   if (btnHeaderPortal) {
     btnHeaderPortal.addEventListener('click', () => {
       showView('portal');
+    });
+  }
+
+  const btnHeaderPlaylists = document.getElementById('btnHeaderPlaylists');
+  if (btnHeaderPlaylists) {
+    btnHeaderPlaylists.addEventListener('click', () => {
+      showView('dashboard');
     });
   }
 
@@ -260,6 +306,7 @@ function showView(viewName) {
   const pairingSection = document.getElementById('pairingSection');
   const dashboardSection = document.getElementById('dashboardSection');
   const btnHeaderPortal = document.getElementById('btnHeaderPortal');
+  const btnHeaderPlaylists = document.getElementById('btnHeaderPlaylists');
   const headerDeviceBadge = document.getElementById('headerDeviceBadge');
 
   // Hide all sections first
@@ -271,22 +318,32 @@ function showView(viewName) {
   if (viewName === 'login') {
     if (loginSection) loginSection.classList.remove('hidden');
     if (btnHeaderPortal) btnHeaderPortal.classList.add('hidden');
+    if (btnHeaderPlaylists) btnHeaderPlaylists.classList.add('hidden');
     if (headerDeviceBadge) headerDeviceBadge.classList.add('hidden');
+    window.location.hash = '';
   } else if (viewName === 'portal') {
     if (portalSection) portalSection.classList.remove('hidden');
     if (btnHeaderPortal) btnHeaderPortal.classList.add('hidden');
+    if (btnHeaderPlaylists) btnHeaderPlaylists.classList.remove('hidden');
     if (state.device && headerDeviceBadge) {
       headerDeviceBadge.classList.remove('hidden');
     }
+    window.location.hash = 'portal';
   } else if (viewName === 'pairing') {
     if (pairingSection) pairingSection.classList.remove('hidden');
     if (btnHeaderPortal) btnHeaderPortal.classList.remove('hidden');
+    if (btnHeaderPlaylists) btnHeaderPlaylists.classList.remove('hidden');
     hideAlert('pairingAlert');
+    window.location.hash = 'pairing';
   } else if (viewName === 'dashboard') {
     if (dashboardSection) dashboardSection.classList.remove('hidden');
     if (btnHeaderPortal) btnHeaderPortal.classList.remove('hidden');
-    if (headerDeviceBadge) headerDeviceBadge.classList.remove('hidden');
+    if (btnHeaderPlaylists) btnHeaderPlaylists.classList.remove('hidden');
+    if (state.device && headerDeviceBadge) {
+      headerDeviceBadge.classList.remove('hidden');
+    }
     updateDeviceDashboardUI();
+    window.location.hash = 'dashboard';
   }
 }
 
@@ -402,6 +459,13 @@ function initDashboardUI() {
     btnUnlink.addEventListener('click', handleUnlinkDevice);
   }
 
+  const btnPairNewFromDash = document.getElementById('btnPairNewFromDash');
+  if (btnPairNewFromDash) {
+    btnPairNewFromDash.addEventListener('click', () => {
+      showView('pairing');
+    });
+  }
+
   const searchInput = document.getElementById('sourceSearchInput');
   if (searchInput) {
     searchInput.addEventListener('input', renderSources);
@@ -414,19 +478,26 @@ function initDashboardUI() {
 }
 
 function updateDeviceDashboardUI() {
-  if (!state.device) return;
-
   const labelEl = document.getElementById('deviceLabel');
   const macFullEl = document.getElementById('deviceMacFull');
   const macMaskedEl = document.getElementById('deviceMacMasked');
   const platformEl = document.getElementById('devicePlatform');
   const syncVersionEl = document.getElementById('deviceSyncVersion');
 
-  if (labelEl) labelEl.textContent = state.device.device_label || state.device.label || 'جهاز المشترك';
-  if (macFullEl) macFullEl.textContent = state.device.device_code || state.device.mac || '-';
-  if (macMaskedEl) macMaskedEl.textContent = state.device.device_code_masked || state.device.device_code || state.device.mac || '-';
-  if (platformEl) platformEl.textContent = state.device.platform || 'Android';
-  if (syncVersionEl) syncVersionEl.textContent = `v${state.device.sync_version || 1}`;
+  if (state.device) {
+    const devCount = state.devices && state.devices.length ? state.devices.length : 1;
+    if (labelEl) labelEl.textContent = state.device.device_label || state.device.label || 'جهاز المشترك';
+    if (macFullEl) macFullEl.textContent = `${state.device.device_code || state.device.mac || '-'} (${devCount} أجهزة مقترنة)`;
+    if (macMaskedEl) macMaskedEl.textContent = state.device.device_code_masked || state.device.device_code || state.device.mac || '-';
+    if (platformEl) platformEl.textContent = state.device.platform || 'Android';
+    if (syncVersionEl) syncVersionEl.textContent = `v${state.device.sync_version || 1}`;
+  } else {
+    if (labelEl) labelEl.textContent = state.admin ? `قوائم حساب: ${state.admin.username}` : 'قوائم الحساب';
+    if (macFullEl) macFullEl.textContent = 'جميع الأجهزة المقترنة بحسابك';
+    if (macMaskedEl) macMaskedEl.textContent = '';
+    if (platformEl) platformEl.textContent = 'All Devices';
+    if (syncVersionEl) syncVersionEl.textContent = 'v1';
+  }
 }
 
 async function loadSources() {
@@ -452,8 +523,8 @@ function updateSourcesStats() {
   const workingEl = document.getElementById('statWorkingSources');
 
   const total = state.sources.length;
-  const active = state.sources.filter(s => s.is_enabled || s.enabled).length;
-  const working = state.sources.filter(s => s.status === 'working').length;
+  const active = state.sources.filter(s => (s.is_enabled || s.enabled) && !s.is_expired && s.status !== 'expired').length;
+  const working = state.sources.filter(s => s.status === 'working' && !s.is_expired).length;
 
   if (totalEl) totalEl.textContent = total;
   if (activeEl) activeEl.textContent = active;
@@ -470,8 +541,10 @@ function renderSources() {
   let filtered = state.sources.filter(s => {
     const matchesSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery) || (s.server_url && s.server_url.toLowerCase().includes(searchQuery));
     const isEnabled = Boolean(s.is_enabled ?? s.enabled);
+    const isExpired = Boolean(s.is_expired || s.status === 'expired');
     if (!matchesSearch) return false;
-    if (filterVal === 'active') return isEnabled;
+    if (filterVal === 'active') return isEnabled && !isExpired;
+    if (filterVal === 'expired') return isExpired;
     if (filterVal === 'disabled') return !isEnabled;
     return true;
   });
@@ -480,10 +553,10 @@ function renderSources() {
     container.innerHTML = `
       <div style="text-align: center; padding: 40px 20px; color: var(--text-muted); background: var(--bg-card); border-radius: var(--border-radius-sm); border: 1px dashed var(--border-color);">
         <i class="fa-solid fa-satellite-dish fa-3x" style="color: var(--text-dim); margin-bottom: 12px; display: block;"></i>
-        <h3 style="font-size: 1.1rem; color: #fff; margin-bottom: 6px;">لا توجد قوائم تشغيل لهذا الجهاز</h3>
-        <p style="font-size: 0.88rem; margin-bottom: 16px;">لم تتم إضافة قوائم لهذا الجهاز بعد. انقر على «إضافة قائمة جديدة» لبدء إضافة مصادر البث.</p>
+        <h3 style="font-size: 1.1rem; color: #fff; margin-bottom: 6px;">لا توجد قوائم تشغيل مضافة لحسابك</h3>
+        <p style="font-size: 0.88rem; margin-bottom: 16px;">لم تتم إضافة قوائم بعد. انقر على «إضافة قائمة جديدة» لبدء إضافة مصادر البث وربطها بأجهزتك.</p>
         <button class="btn btn-primary btn-sm" onclick="openAddSourceModal()">
-          <i class="fa-solid fa-plus"></i> إضافة أول قائمة لهذا الجهاز
+          <i class="fa-solid fa-plus"></i> إضافة أول قائمة
         </button>
       </div>
     `;
@@ -492,19 +565,27 @@ function renderSources() {
 
   container.innerHTML = filtered.map(src => {
     const isEnabled = Boolean(src.is_enabled ?? src.enabled);
+    const isExpired = Boolean(src.is_expired || src.status === 'expired');
     const isXtream = src.source_type === 'xtream';
     const typeBadge = isXtream
       ? `<span class="badge badge-purple"><i class="fa-solid fa-server"></i> Xtream</span>`
       : `<span class="badge badge-blue"><i class="fa-solid fa-file-lines"></i> M3U</span>`;
 
     let statusBadge = `<span class="badge badge-gray">غير مفحوص</span>`;
-    if (src.status === 'working') {
+    if (isExpired) {
+      statusBadge = `<span class="badge badge-red"><i class="fa-solid fa-clock"></i> منتهية الصلاحية</span>`;
+    } else if (src.status === 'working') {
       statusBadge = `<span class="badge badge-green"><i class="fa-solid fa-circle-check"></i> يعمل بنجاح</span>`;
     } else if (src.status === 'connection_failed') {
       statusBadge = `<span class="badge badge-red"><i class="fa-solid fa-circle-xmark"></i> فشل الاتصال</span>`;
     }
 
     const maskedUrl = maskUrlCredentials(src.server_url);
+
+    let expMeta = '';
+    if (src.expires_at) {
+      expMeta = `<span>الصلاحية: <strong style="color: ${isExpired ? 'var(--danger)' : 'var(--text-muted)'};">${escapeHtml(String(src.expires_at))}</strong></span>`;
+    }
 
     return `
       <div class="playlist-card-item">
@@ -516,7 +597,8 @@ function renderSources() {
           </div>
           <div class="playlist-card-meta">
             <span class="playlist-card-url" title="${escapeHtml(maskedUrl)}">${escapeHtml(maskedUrl)}</span>
-            <span>الحالة: <strong style="color: ${isEnabled ? 'var(--success)' : 'var(--text-dim)'};">${isEnabled ? 'مفعلة' : 'معطلة'}</strong></span>
+            <span>الحالة: <strong style="color: ${isEnabled && !isExpired ? 'var(--success)' : 'var(--text-dim)'};">${isEnabled ? (isExpired ? 'منتهية' : 'مفعلة') : 'معطلة'}</strong></span>
+            ${expMeta}
           </div>
         </div>
 
@@ -636,10 +718,13 @@ window.openAddSourceModal = function () {
   hideAlert('modalSourceAlert');
 
   const titleEl = document.getElementById('sourceModalTitle');
-  if (titleEl) titleEl.textContent = 'إضافة قائمة تشغيل جديدة للجهاز';
+  if (titleEl) titleEl.textContent = 'إضافة قائمة تشغيل جديدة للحساب';
 
   const form = document.getElementById('sourceForm');
   if (form) form.reset();
+
+  const expInput = document.getElementById('sourceExpiresAtInput');
+  if (expInput) expInput.value = '';
 
   setSourceModalType('m3u');
   document.getElementById('modalSource')?.classList.remove('hidden');
@@ -665,6 +750,29 @@ window.openEditSourceModal = function (sourceId) {
     document.getElementById('xtreamPassInput').value = '';
   } else {
     document.getElementById('sourceUrlInput').value = src.server_url || '';
+  }
+
+  const expInput = document.getElementById('sourceExpiresAtInput');
+  if (expInput) {
+    if (src.expires_at) {
+      try {
+        let val = String(src.expires_at).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+          expInput.value = val;
+        } else if (/^\d+$/.test(val)) {
+          let ts = parseInt(val);
+          if (ts < 10000000000) ts *= 1000;
+          let d = new Date(ts);
+          expInput.value = d.toISOString().split('T')[0];
+        } else {
+          expInput.value = '';
+        }
+      } catch (e) {
+        expInput.value = '';
+      }
+    } else {
+      expInput.value = '';
+    }
   }
 
   document.getElementById('modalSource')?.classList.remove('hidden');
@@ -726,6 +834,11 @@ async function handleSaveSourceForm(e) {
     };
     if (password) {
       payload.password = password;
+    }
+
+    const expDateVal = document.getElementById('sourceExpiresAtInput')?.value;
+    if (expDateVal) {
+      payload.expires_at = expDateVal;
     }
 
     const isEdit = Boolean(state.currentEditingSourceId);
