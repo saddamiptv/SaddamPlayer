@@ -1,138 +1,301 @@
 /**
- * SADDAM IPTV - Client Application Logic
- * Strict adherence to SDP v1.1
- * Direct Pairing -> Session -> Source Management -> Android Sync
+ * SADDAM IPTV - Client Application Logic (Portal, Auth Gate, Device Pairing & Playlist Management)
+ * Strict compliance with SADDAM_IPTV_Website_Pairing_Fixes_SPD:
+ * - Gated Entry Screen: Login required before any internal page or API is accessible.
+ * - Portal Home: Shows two distinct options: "إقران جهاز (Pair Device)" and "لوحة الإدارة (Admin Panel)".
+ * - Direct Seamless Navigation: Moving between Portal, Pairing, and Admin Panel requires NO re-authentication.
+ * - Non-persistent Session: Session cookie without Max-Age/Expires; NO tokens in localStorage/sessionStorage.
+ * - Device Pairing: Requires both valid MAC Address and Device Key (PIN).
+ * - High-performance vanilla JavaScript optimized for fast loading and old devices.
  */
 
-// Configuration & API Base (Use relative paths to seamlessly support localhost, LAN IP, and domain)
+// Configuration & API Base
 const API_BASE = window.SADDAM_API_BASE || '';
 
-// Application State
+// In-Memory Application State (Strictly NO credentials in localStorage/sessionStorage)
 const state = {
-  token: localStorage.getItem('saddam_session_token') || null,
+  admin: null,
   device: null,
   sources: [],
-  syncPreview: null,
-  activeTab: 'overview',
   currentEditingSourceId: null
 };
 
-// DOM Elements Cache
-const DOM = {};
-
+// ================= DOM Initialization =================
 document.addEventListener('DOMContentLoaded', () => {
-  cacheDOMElements();
-  bindEvents();
-  checkExistingSession();
+  initAuthUI();
+  initPortalNavigation();
+  initPairingUI();
+  initDashboardUI();
+  initSourceModals();
+
+  // Check session status on page load
+  checkSessionStatus();
 });
 
-function cacheDOMElements() {
-  DOM.loginViewSection = document.getElementById('loginViewSection');
-  DOM.pairingSection = document.getElementById('pairingSection');
-  DOM.dashboardSection = document.getElementById('dashboardSection');
-  DOM.indexLoginForm = document.getElementById('indexLoginForm');
-  DOM.indexAdminUser = document.getElementById('indexAdminUser');
-  DOM.indexAdminPass = document.getElementById('indexAdminPass');
-  DOM.indexLoginAlert = document.getElementById('indexLoginAlert');
-  DOM.indexSetupNotice = document.getElementById('indexSetupNotice');
-  DOM.btnSwitchToAdmin = document.getElementById('btnSwitchToAdmin');
-  DOM.btnSwitchToPairing = document.getElementById('btnSwitchToPairing');
-  DOM.btnGoToPairing = document.getElementById('btnGoToPairing');
-  DOM.btnBackToAdminLogin = document.getElementById('btnBackToAdminLogin');
+// ================= 1. Authentication & Session Gate (SPD Section 2 & 4) =================
 
-  DOM.macInput = document.getElementById('macInput');
-  DOM.pinInput = document.getElementById('pinInput');
-  DOM.togglePinVisibility = document.getElementById('togglePinVisibility');
-  DOM.pairingForm = document.getElementById('pairingForm');
-  DOM.btnPair = document.getElementById('btnPair');
-  DOM.pairingAlert = document.getElementById('pairingAlert');
-
-  // Header & Device elements
-  DOM.headerDeviceBadge = document.getElementById('headerDeviceBadge');
-  DOM.deviceLabel = document.getElementById('deviceLabel');
-  DOM.deviceMacMasked = document.getElementById('deviceMacMasked');
-  DOM.deviceMacFull = document.getElementById('deviceMacFull');
-  DOM.devicePlatform = document.getElementById('devicePlatform');
-  DOM.deviceSyncVersion = document.getElementById('deviceSyncVersion');
-  DOM.btnLogout = document.getElementById('btnLogout');
-  DOM.btnUnlink = document.getElementById('btnUnlink');
-
-  // Overview Stats
-  DOM.statTotalSources = document.getElementById('statTotalSources');
-  DOM.statActiveSources = document.getElementById('statActiveSources');
-  DOM.statWorkingSources = document.getElementById('statWorkingSources');
-
-  // Sources
-  DOM.sourcesContainer = document.getElementById('sourcesContainer');
-  DOM.btnOpenAddSource = document.getElementById('btnOpenAddSource');
-  DOM.sourceSearchInput = document.getElementById('sourceSearchInput');
-  DOM.sourceFilterSelect = document.getElementById('sourceFilterSelect');
-
-  // Modals
-  DOM.modalHelp = document.getElementById('modalHelp');
-  DOM.modalSource = document.getElementById('modalSource');
-  DOM.closeHelpModal = document.getElementById('closeHelpModal');
-  DOM.closeSourceModal = document.getElementById('closeSourceModal');
-  DOM.cancelSourceModalBtn = document.getElementById('cancelSourceModalBtn');
-
-  // Add/Edit Source Form
-  DOM.sourceForm = document.getElementById('sourceForm');
-  DOM.sourceModalTitle = document.getElementById('sourceModalTitle');
-  DOM.tabOptionM3u = document.getElementById('tabOptionM3u');
-  DOM.tabOptionXtream = document.getElementById('tabOptionXtream');
-  DOM.m3uFields = document.getElementById('m3uFields');
-  DOM.xtreamFields = document.getElementById('xtreamFields');
-  DOM.sourceNameInput = document.getElementById('sourceNameInput');
-  DOM.sourceUrlInput = document.getElementById('sourceUrlInput');
-function bindEvents() {
-  // Mode switchers
-  if (DOM.btnSwitchToAdmin) {
-    DOM.btnSwitchToAdmin.addEventListener('click', () => {
-      window.location.href = 'admin.html';
-    });
+function initAuthUI() {
+  const loginForm = document.getElementById('mainLoginForm');
+  if (loginForm) {
+    loginForm.addEventListener('submit', handleLoginSubmit);
   }
 
-  if (DOM.btnGoToPairing) {
-    DOM.btnGoToPairing.addEventListener('click', () => {
-      showPairingView();
-    });
-  }
-
-  if (DOM.btnSwitchToPairing) {
-    DOM.btnSwitchToPairing.addEventListener('click', () => {
-      showPairingView();
-    });
-  }
-
-  if (DOM.btnBackToAdminLogin) {
-    DOM.btnBackToAdminLogin.addEventListener('click', () => {
-      showLoginView();
-    });
-  }
-
-  // Admin login on index.html
-  if (DOM.indexLoginForm) {
-    DOM.indexLoginForm.addEventListener('submit', handleIndexAdminLogin);
-  }
-
-  const indexToggleBtn = document.getElementById('indexTogglePassBtn');
-  if (indexToggleBtn) {
-    indexToggleBtn.addEventListener('click', () => {
-      const p = DOM.indexAdminPass;
-      const icon = document.getElementById('indexTogglePassIcon');
-      if (p.type === 'password') {
-        p.type = 'text';
-        icon.className = 'fa-solid fa-eye-slash';
-      } else {
-        p.type = 'password';
-        icon.className = 'fa-solid fa-eye';
+  const togglePasswordBtn = document.getElementById('toggleLoginPassword');
+  if (togglePasswordBtn) {
+    togglePasswordBtn.addEventListener('click', () => {
+      const passInput = document.getElementById('loginPassword');
+      const eyeIcon = document.getElementById('loginPasswordEye');
+      if (passInput && eyeIcon) {
+        if (passInput.type === 'password') {
+          passInput.type = 'text';
+          eyeIcon.className = 'fa-solid fa-eye-slash';
+        } else {
+          passInput.type = 'password';
+          eyeIcon.className = 'fa-solid fa-eye';
+        }
       }
     });
   }
 
-  // MAC Input formatter
-  if (DOM.macInput) {
-    DOM.macInput.addEventListener('input', (e) => {
+  const logoutBtn = document.getElementById('btnLogout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', handleLogout);
+  }
+}
+
+async function checkSessionStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/status`, {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    });
+    const data = await res.json();
+
+    if (res.ok && data.authenticated && data.admin) {
+      state.admin = data.admin;
+      updateHeaderForAuthenticatedAdmin();
+
+      // Check if an active device was previously paired in this browser session
+      await checkActiveDeviceSession();
+    } else {
+      setUnauthenticatedState();
+    }
+  } catch (err) {
+    console.error('Session check error:', err);
+    setUnauthenticatedState();
+  }
+}
+
+async function checkActiveDeviceSession() {
+  try {
+    const res = await fetch(`${API_BASE}/api/web/me`, {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.device) {
+      state.device = data.device;
+      showView('dashboard');
+      await loadSources();
+      return;
+    }
+  } catch (e) {
+    // No active device session, fallback to portal home
+  }
+  showView('portal');
+}
+
+function updateHeaderForAuthenticatedAdmin() {
+  const adminBadge = document.getElementById('adminUserBadge');
+  const adminText = document.getElementById('adminUserText');
+  const adminAccessBtn = document.getElementById('btnAdminAccess');
+  const logoutBtn = document.getElementById('btnLogout');
+
+  if (adminBadge && adminText && state.admin) {
+    adminText.textContent = `مشرف ${state.admin.slot}: ${state.admin.username}`;
+    adminBadge.classList.remove('hidden');
+  }
+  if (adminAccessBtn) adminAccessBtn.classList.remove('hidden');
+  if (logoutBtn) logoutBtn.classList.remove('hidden');
+}
+
+function setUnauthenticatedState() {
+  state.admin = null;
+  state.device = null;
+  state.sources = [];
+
+  const adminBadge = document.getElementById('adminUserBadge');
+  const headerDeviceBadge = document.getElementById('headerDeviceBadge');
+  const btnHeaderPortal = document.getElementById('btnHeaderPortal');
+  const adminAccessBtn = document.getElementById('btnAdminAccess');
+  const logoutBtn = document.getElementById('btnLogout');
+
+  if (adminBadge) adminBadge.classList.add('hidden');
+  if (headerDeviceBadge) headerDeviceBadge.classList.add('hidden');
+  if (btnHeaderPortal) btnHeaderPortal.classList.add('hidden');
+  if (adminAccessBtn) adminAccessBtn.classList.add('hidden');
+  if (logoutBtn) logoutBtn.classList.add('hidden');
+
+  showView('login');
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  hideAlert('loginAlert');
+
+  const usernameInput = document.getElementById('loginUsername');
+  const passwordInput = document.getElementById('loginPassword');
+  const submitBtn = document.getElementById('btnLoginSubmit');
+  const btnText = document.getElementById('btnLoginText');
+
+  const username = usernameInput?.value.trim();
+  const password = passwordInput?.value.trim();
+
+  if (!username || !password) {
+    showAlert('loginAlert', 'يرجى إدخال اسم المستخدم وكلمة المرور', 'danger');
+    return;
+  }
+
+  submitBtn.disabled = true;
+  if (btnText) btnText.textContent = 'جارٍ التحقق والدخول...';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+      credentials: 'same-origin'
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.admin) {
+      state.admin = data.admin;
+      updateHeaderForAuthenticatedAdmin();
+      if (passwordInput) passwordInput.value = '';
+      showView('portal');
+      showToast(`مرحباً بك، المشرف ${data.admin.username}`, 'success');
+    } else {
+      showAlert('loginAlert', data.error || 'اسم المستخدم أو كلمة المرور غير صحيحة', 'danger');
+    }
+  } catch (err) {
+    console.error('Login error:', err);
+    showAlert('loginAlert', 'تعذر الاتصال بالخادم. يرجى التأكد من تشغيل السيرفر والمحاولة مجدداً.', 'danger');
+  } finally {
+    submitBtn.disabled = false;
+    if (btnText) btnText.textContent = 'تسجيل الدخول';
+  }
+}
+
+async function handleLogout() {
+  if (!confirm('هل أنت متأكد من رغبتك في تسجيل الخروج وإنهاء الجلسة؟')) return;
+
+  try {
+    await fetch(`${API_BASE}/api/v1/auth/logout`, {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+  } catch (e) {
+    console.warn('Logout API call failed:', e);
+  }
+
+  setUnauthenticatedState();
+  showToast('تم تسجيل الخروج وإنهاء الجلسة بنجاح', 'info');
+}
+
+// ================= 2. Portal Navigation & View Switcher (SPD Section 3) =================
+
+function initPortalNavigation() {
+  const cardPair = document.getElementById('cardPairDevice');
+  const btnOpenPair = document.getElementById('btnOpenPairingView');
+  if (cardPair) {
+    cardPair.addEventListener('click', (e) => {
+      e.preventDefault();
+      showView('pairing');
+    });
+  }
+  if (btnOpenPair) {
+    btnOpenPair.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showView('pairing');
+    });
+  }
+
+  const btnHeaderPortal = document.getElementById('btnHeaderPortal');
+  if (btnHeaderPortal) {
+    btnHeaderPortal.addEventListener('click', () => {
+      showView('portal');
+    });
+  }
+
+  const btnBackPairing = document.getElementById('btnBackToPortalFromPairing');
+  if (btnBackPairing) {
+    btnBackPairing.addEventListener('click', () => {
+      showView('portal');
+    });
+  }
+
+  const btnBackDash = document.getElementById('btnBackToPortalFromDash');
+  if (btnBackDash) {
+    btnBackDash.addEventListener('click', () => {
+      showView('portal');
+    });
+  }
+
+  const brandLink = document.getElementById('brandHomeLink');
+  if (brandLink) {
+    brandLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (state.admin) {
+        showView('portal');
+      } else {
+        showView('login');
+      }
+    });
+  }
+}
+
+function showView(viewName) {
+  const loginSection = document.getElementById('loginSection');
+  const portalSection = document.getElementById('portalSection');
+  const pairingSection = document.getElementById('pairingSection');
+  const dashboardSection = document.getElementById('dashboardSection');
+  const btnHeaderPortal = document.getElementById('btnHeaderPortal');
+  const headerDeviceBadge = document.getElementById('headerDeviceBadge');
+
+  // Hide all sections first
+  if (loginSection) loginSection.classList.add('hidden');
+  if (portalSection) portalSection.classList.add('hidden');
+  if (pairingSection) pairingSection.classList.add('hidden');
+  if (dashboardSection) dashboardSection.classList.add('hidden');
+
+  if (viewName === 'login') {
+    if (loginSection) loginSection.classList.remove('hidden');
+    if (btnHeaderPortal) btnHeaderPortal.classList.add('hidden');
+    if (headerDeviceBadge) headerDeviceBadge.classList.add('hidden');
+  } else if (viewName === 'portal') {
+    if (portalSection) portalSection.classList.remove('hidden');
+    if (btnHeaderPortal) btnHeaderPortal.classList.add('hidden');
+    if (state.device && headerDeviceBadge) {
+      headerDeviceBadge.classList.remove('hidden');
+    }
+  } else if (viewName === 'pairing') {
+    if (pairingSection) pairingSection.classList.remove('hidden');
+    if (btnHeaderPortal) btnHeaderPortal.classList.remove('hidden');
+    hideAlert('pairingAlert');
+  } else if (viewName === 'dashboard') {
+    if (dashboardSection) dashboardSection.classList.remove('hidden');
+    if (btnHeaderPortal) btnHeaderPortal.classList.remove('hidden');
+    if (headerDeviceBadge) headerDeviceBadge.classList.remove('hidden');
+    updateDeviceDashboardUI();
+  }
+}
+
+// ================= 3. Device Pairing UI (SPD Section 3.1 & 5) =================
+
+function initPairingUI() {
+  const macInput = document.getElementById('macInput');
+  if (macInput) {
+    macInput.addEventListener('input', (e) => {
       let val = e.target.value.toUpperCase().replace(/[^A-F0-9]/g, '');
       if (val.length > 12) val = val.substring(0, 12);
       let formatted = val.match(/.{1,2}/g)?.join(':') || val;
@@ -140,746 +303,541 @@ function bindEvents() {
     });
   }
 
-  // PIN Input filter (strictly 6 digits)
-  if (DOM.pinInput) {
-    DOM.pinInput.addEventListener('input', (e) => {
+  const pinInput = document.getElementById('pinInput');
+  if (pinInput) {
+    pinInput.addEventListener('input', (e) => {
       e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
     });
   }
 
-  // Toggle PIN visibility
-  if (DOM.togglePinVisibility) {
-    DOM.togglePinVisibility.addEventListener('click', () => {
-      const isPassword = DOM.pinInput.type === 'password';
-      DOM.pinInput.type = isPassword ? 'text' : 'password';
-      DOM.togglePinVisibility.innerHTML = isPassword ? '<i class="fa-solid fa-eye-slash"></i>' : '<i class="fa-solid fa-eye"></i>';
-    });
-  }
-
-  // Pairing Form Submit
-  if (DOM.pairingForm) {
-    DOM.pairingForm.addEventListener('submit', handlePairing);
-  }
-
-  // Logout / Revoke
-  if (DOM.btnLogout) {
-    DOM.btnLogout.addEventListener('click', handleLogout);
-  }
-
-  // Unlink Device
-  if (DOM.btnUnlink) {
-    DOM.btnUnlink.addEventListener('click', () => {
-      if (confirm('هل أنت متأكد من رغبتك في إلغاء ربط هذا الجهاز من هذه الجلسة؟')) {
-        handleUnlink();
+  const togglePin = document.getElementById('togglePinVisibility');
+  if (togglePin) {
+    togglePin.addEventListener('click', () => {
+      const isPass = pinInput.type === 'password';
+      pinInput.type = isPass ? 'text' : 'password';
+      const eye = document.getElementById('pinEyeIcon');
+      if (eye) {
+        eye.className = isPass ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
       }
     });
   }
 
-  // Help Modal triggers
+  const pairingForm = document.getElementById('pairingForm');
+  if (pairingForm) {
+    pairingForm.addEventListener('submit', handleDevicePairingSubmit);
+  }
+
+  // Help Modal
+  const helpModal = document.getElementById('modalHelp');
   document.querySelectorAll('.open-help-modal').forEach(el => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      DOM.modalHelp?.classList.remove('hidden');
+      helpModal?.classList.remove('hidden');
     });
   });
-
-  if (DOM.closeHelpModal) {
-    DOM.closeHelpModal.addEventListener('click', () => {
-      DOM.modalHelp?.classList.add('hidden');
+  const closeHelp = document.getElementById('closeHelpModal');
+  if (closeHelp) {
+    closeHelp.addEventListener('click', () => {
+      helpModal?.classList.add('hidden');
     });
-  }
-
-  if (DOM.closeSourceModal) {
-    DOM.closeSourceModal.addEventListener('click', () => {
-      DOM.modalSource?.classList.add('hidden');
-    });
-  }
-
-  if (DOM.cancelSourceModalBtn) {
-    DOM.cancelSourceModalBtn.addEventListener('click', () => {
-      DOM.modalSource?.classList.add('hidden');
-    });
-  }
-
-  // Add Source Modal Trigger
-  if (DOM.btnOpenAddSource) {
-    DOM.btnOpenAddSource.addEventListener('click', () => {
-      openAddSourceModal();
-    });
-  }
-
-  // Source Type Switcher in modal
-  if (DOM.tabOptionM3u && DOM.tabOptionXtream) {
-    DOM.tabOptionM3u.addEventListener('click', () => setSourceModalType('m3u'));
-    DOM.tabOptionXtream.addEventListener('click', () => setSourceModalType('xtream'));
-  }
-
-  // Source Form Save
-  if (DOM.sourceForm) {
-    DOM.sourceForm.addEventListener('submit', handleSaveSource);
-  }
-
-  // Search & Filter Sources
-  if (DOM.sourceSearchInput) {
-    DOM.sourceSearchInput.addEventListener('input', renderSources);
-  }
-  if (DOM.sourceFilterSelect) {
-    DOM.sourceFilterSelect.addEventListener('change', renderSources);
   }
 }
 
-// ================= View Switchers =================
-function showLoginView() {
-  DOM.loginViewSection?.classList.remove('hidden');
-  DOM.pairingSection?.classList.add('hidden');
-  DOM.dashboardSection?.classList.add('hidden');
-  DOM.btnSwitchToAdmin?.classList.add('hidden');
-  DOM.btnSwitchToPairing?.classList.remove('hidden');
-}
-
-function showPairingView() {
-  DOM.loginViewSection?.classList.add('hidden');
-  DOM.pairingSection?.classList.remove('hidden');
-  DOM.dashboardSection?.classList.add('hidden');
-  DOM.btnSwitchToAdmin?.classList.remove('hidden');
-  DOM.btnSwitchToPairing?.classList.add('hidden');
-}
-
-function showDashboardView() {
-  DOM.loginViewSection?.classList.add('hidden');
-  DOM.pairingSection?.classList.add('hidden');
-  DOM.dashboardSection?.classList.remove('hidden');
-  DOM.headerDeviceBadge?.classList.remove('hidden');
-  DOM.btnLogout?.classList.remove('hidden');
-  DOM.btnSwitchToAdmin?.classList.remove('hidden');
-  DOM.btnSwitchToPairing?.classList.add('hidden');
-}
-
-async function handleIndexAdminLogin(e) {
+async function handleDevicePairingSubmit(e) {
   e.preventDefault();
-  const user = DOM.indexAdminUser.value.trim();
-  const pass = DOM.indexAdminPass.value.trim();
-  const alertEl = DOM.indexLoginAlert;
-  const btn = document.getElementById('btnIndexLogin');
+  hideAlert('pairingAlert');
 
-  alertEl.classList.add('hidden');
-  btn.disabled = true;
+  const macInput = document.getElementById('macInput');
+  const pinInput = document.getElementById('pinInput');
+  const btnPair = document.getElementById('btnPair');
+  const btnPairText = document.getElementById('btnPairText');
 
-  try {
-    const res = await fetch('/api/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user, password: pass })
-    });
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      window.location.href = 'admin.html';
-    } else {
-      alertEl.className = 'alert-box danger';
-      alertEl.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> <span>${data.error || 'اسم المستخدم أو كلمة المرور غير صحيحة'}</span>`;
-      alertEl.classList.remove('hidden');
-      if (data.setup_needed && DOM.indexSetupNotice) {
-        DOM.indexSetupNotice.classList.remove('hidden');
-      }
-    }
-  } catch (err) {
-    alertEl.className = 'alert-box danger';
-    alertEl.innerHTML = `<span>تعذر الاتصال بالخادم. تأكد من تشغيل السيرفر.</span>`;
-    alertEl.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function checkExistingSession() {
-  // Check if admin is already logged in
-  try {
-    const authRes = await fetch('/api/v1/auth/status');
-    const authData = await authRes.json();
-    if (authData.authenticated) {
-      window.location.href = 'admin.html';
-      return;
-    }
-    if (authData.setup_needed && DOM.indexSetupNotice) {
-      DOM.indexSetupNotice.classList.remove('hidden');
-    }
-  } catch (err) {}
-
-  // Check if device session exists
-  if (!state.token) {
-    showPairingView();
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE}/api/web/me`, {
-      headers: { 'Authorization': `Bearer ${state.token}` }
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      state.device = data.device;
-      showDashboardView();
-      await loadSources();
-    } else {
-      clearSession();
-      showPairingView();
-    }
-  } catch (err) {
-    showPairingView();
-  }
-}
-
-async function handlePairing(e) {
-  e.preventDefault();
-  const mac = DOM.macInput.value.trim();
-  const pin = DOM.pinInput.value.trim();
+  const mac = macInput?.value.trim();
+  const pin = pinInput?.value.trim();
 
   if (!mac || !pin) {
-    showAlert(DOM.pairingAlert, 'يرجى إدخال كل من MAC Code و PIN المكون من 6 أرقام.', 'danger');
+    showAlert('pairingAlert', 'يرجى إدخال عنوان MAC ومفتاح الجهاز PIN معاً.', 'danger');
     return;
   }
 
   if (pin.length !== 6) {
-    showAlert(DOM.pairingAlert, 'رمز PIN يجب أن يتكون من 6 أرقام بالضبط.', 'danger');
+    showAlert('pairingAlert', 'رمز PIN يجب أن يتكون من 6 أرقام.', 'danger');
     return;
   }
 
-  setButtonLoading(DOM.btnPair, true, 'جارٍ التحقق من الرموز...');
+  btnPair.disabled = true;
+  if (btnPairText) btnPairText.textContent = 'جارٍ التحقق من الجهاز...';
 
   try {
     const res = await fetch(`${API_BASE}/api/web/pair`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mac, pin })
+      body: JSON.stringify({ mac, pin }),
+      credentials: 'same-origin'
     });
-    
-    let data;
-    try {
-      data = await res.json();
-    } catch (parseError) {
-      data = null;
-    }
 
-    if (res.ok && data && data.success) {
-      state.token = data.token;
-      state.device = data.device;
-      localStorage.setItem('saddam_session_token', data.token);
-      hideAlert(DOM.pairingAlert);
-      showDashboardView();
-      await loadDeviceProfile();
-      await loadSources();
-      await loadSyncPreview();
-    } else {
-      const errorMsg = (data && data.error) 
-        ? data.error 
-        : `تعذر الاتصال بالخادم (رمز الخطأ: ${res.status}).`;
-      showAlert(DOM.pairingAlert, errorMsg, 'danger');
-    }
-  } catch (err) {
-    console.error('Pairing fetch error:', err);
-    if (window.location.protocol === 'file:') {
-      showAlert(DOM.pairingAlert, 'تنبيه: لا يمكن الاتصال بالخادم عند فتح الصفحة كملف محلي (file://). يرجى رفع مجلد Publish إلى GitHub Pages أو تشغيل خادم محلي.', 'danger');
-    } else {
-      showAlert(DOM.pairingAlert, 'حدث خطأ أثناء الاتصال بالخادم. إذا كان هذا أول طلب، فقد يستغرق خادم Render نحو 30 ثانية للاستيقاظ من وضع السكون. يرجى الانتظار قليلًا وإعادة المحاولة.', 'danger');
-    }
-  } finally {
-    setButtonLoading(DOM.btnPair, false, 'ربط الجهاز والمتابعة <i class="fa-solid fa-arrow-left"></i>');
-  }
-}
-
-async function handleLogout() {
-  try {
-    await fetch(`${API_BASE}/api/web/session/revoke`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${state.token}` }
-    });
-  } catch (e) {}
-  clearSession();
-  showPairingView();
-}
-
-async function handleUnlink() {
-  const btn = document.getElementById('btnConfirmUnlink');
-  setButtonLoading(btn, true, 'جارٍ إلغاء الربط...');
-  try {
-    const res = await fetch(`${API_BASE}/api/web/device/unlink`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${state.token}` }
-    });
-    if (res.ok) {
-      closeModal();
-      clearSession();
-      showPairingView();
-      showAlert(DOM.pairingAlert, 'تم إلغاء ربط الجهاز بنجاح. يمكنك ربطه مجددًا في أي وقت.', 'success');
-    }
-  } catch (err) {
-    alert('تعذر إلغاء الربط، حاول مجددًا.');
-  } finally {
-    setButtonLoading(btn, false, 'تأكيد إلغاء الربط');
-  }
-}
-
-function clearSession() {
-  state.token = null;
-  state.device = null;
-  state.sources = [];
-  localStorage.removeItem('saddam_session_token');
-}
-
-function showPairingView() {
-  DOM.pairingSection.classList.remove('hidden');
-  DOM.dashboardSection.classList.add('hidden');
-  DOM.headerDeviceBadge.classList.add('hidden');
-  DOM.btnLogout.classList.add('hidden');
-}
-
-function showDashboardView() {
-  DOM.pairingSection.classList.add('hidden');
-  DOM.dashboardSection.classList.remove('hidden');
-  DOM.headerDeviceBadge.classList.remove('hidden');
-  DOM.btnLogout.classList.remove('hidden');
-}
-
-// ==========================================================================
-// Device Profile & Sources
-// ==========================================================================
-
-async function loadDeviceProfile() {
-  try {
-    const res = await fetch(`${API_BASE}/api/web/me`, {
-      headers: { 'Authorization': `Bearer ${state.token}` }
-    });
     const data = await res.json();
-    if (res.ok && data.success) {
+    if (res.ok && data.success && data.device) {
       state.device = data.device;
-      updateDeviceHeaderUI();
+      showToast('تم التحقق وإقران الجهاز بنجاح!', 'success');
+      showView('dashboard');
+      await loadSources();
+    } else {
+      showAlert('pairingAlert', data.error || 'تعذر التحقق من الرموز. راجع القيم في تطبيق SADDAM IPTV وحاول مجدداً.', 'danger');
     }
-  } catch (e) {}
+  } catch (err) {
+    console.error('Pairing error:', err);
+    showAlert('pairingAlert', 'تعذر الاتصال بالخادم لإتمام عملية الإقران.', 'danger');
+  } finally {
+    btnPair.disabled = false;
+    if (btnPairText) btnPairText.textContent = 'التحقق وإقران الجهاز';
+  }
 }
 
-function updateDeviceHeaderUI() {
-  if (!state.device) return;
-  DOM.deviceLabel.textContent = state.device.device_label || 'جهاز Android TV';
-  DOM.deviceMacMasked.textContent = state.device.device_code_masked || '';
-  DOM.devicePlatform.textContent = `${state.device.platform} (تطبيق v${state.device.app_version})`;
-  if (DOM.deviceSyncVersion) {
-    DOM.deviceSyncVersion.textContent = `v${state.device.sync_version}`;
+// ================= 4. Paired Device Dashboard & Playlists Management (SPD Section 3.1 & 6) =================
+
+function initDashboardUI() {
+  const btnUnlink = document.getElementById('btnUnlink');
+  if (btnUnlink) {
+    btnUnlink.addEventListener('click', handleUnlinkDevice);
   }
+
+  const searchInput = document.getElementById('sourceSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', renderSources);
+  }
+
+  const filterSelect = document.getElementById('sourceFilterSelect');
+  if (filterSelect) {
+    filterSelect.addEventListener('change', renderSources);
+  }
+}
+
+function updateDeviceDashboardUI() {
+  if (!state.device) return;
+
+  const labelEl = document.getElementById('deviceLabel');
+  const macFullEl = document.getElementById('deviceMacFull');
+  const macMaskedEl = document.getElementById('deviceMacMasked');
+  const platformEl = document.getElementById('devicePlatform');
+  const syncVersionEl = document.getElementById('deviceSyncVersion');
+
+  if (labelEl) labelEl.textContent = state.device.device_label || state.device.label || 'جهاز المشترك';
+  if (macFullEl) macFullEl.textContent = state.device.device_code || state.device.mac || '-';
+  if (macMaskedEl) macMaskedEl.textContent = state.device.device_code_masked || state.device.device_code || state.device.mac || '-';
+  if (platformEl) platformEl.textContent = state.device.platform || 'Android';
+  if (syncVersionEl) syncVersionEl.textContent = `v${state.device.sync_version || 1}`;
 }
 
 async function loadSources() {
   try {
     const res = await fetch(`${API_BASE}/api/web/sources`, {
-      headers: { 'Authorization': `Bearer ${state.token}` }
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      state.sources = data.sources;
+      state.sources = data.sources || [];
       renderSources();
-      updateStats();
+      updateSourcesStats();
     }
   } catch (err) {
-    console.error('Error fetching sources:', err);
+    console.error('Failed to load device sources:', err);
   }
 }
 
-function updateStats() {
+function updateSourcesStats() {
+  const totalEl = document.getElementById('statTotalSources');
+  const activeEl = document.getElementById('statActiveSources');
+  const workingEl = document.getElementById('statWorkingSources');
+
   const total = state.sources.length;
-  const active = state.sources.filter(s => s.enabled === 1).length;
+  const active = state.sources.filter(s => s.is_enabled || s.enabled).length;
   const working = state.sources.filter(s => s.status === 'working').length;
 
-  if (DOM.statTotalSources) DOM.statTotalSources.textContent = total;
-  if (DOM.statActiveSources) DOM.statActiveSources.textContent = active;
-  if (DOM.statWorkingSources) DOM.statWorkingSources.textContent = working;
-  if (DOM.statSyncState) {
-    DOM.statSyncState.textContent = total === 0 ? 'لا توجد مصادر' : 'متزامن (v' + (state.device?.sync_version || 1) + ')';
-  }
+  if (totalEl) totalEl.textContent = total;
+  if (activeEl) activeEl.textContent = active;
+  if (workingEl) workingEl.textContent = working;
 }
 
 function renderSources() {
-  const container = DOM.sourcesContainer;
+  const container = document.getElementById('sourcesContainer');
   if (!container) return;
 
-  const searchTerm = (DOM.sourceSearchInput?.value || '').toLowerCase().trim();
-  const filterType = DOM.sourceFilterSelect?.value || 'all';
+  const searchQuery = document.getElementById('sourceSearchInput')?.value.trim().toLowerCase() || '';
+  const filterVal = document.getElementById('sourceFilterSelect')?.value || 'all';
 
-  const filtered = state.sources.filter(source => {
-    const matchSearch = source.name.toLowerCase().includes(searchTerm) || source.server_url.toLowerCase().includes(searchTerm);
-    const matchType = (filterType === 'all') || (source.source_type === filterType);
-    return matchSearch && matchType;
+  let filtered = state.sources.filter(s => {
+    const matchesSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery) || (s.server_url && s.server_url.toLowerCase().includes(searchQuery));
+    const isEnabled = Boolean(s.is_enabled ?? s.enabled);
+    if (!matchesSearch) return false;
+    if (filterVal === 'active') return isEnabled;
+    if (filterVal === 'disabled') return !isEnabled;
+    return true;
   });
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 50px 20px; background: rgba(13, 20, 38, 0.4); border-radius: 16px; border: 1px dashed rgba(255,255,255,0.1);">
-        <i class="fa-solid fa-satellite-dish" style="font-size: 3rem; color: var(--primary); margin-bottom: 16px; opacity: 0.6;"></i>
-        <h3 style="font-size: 1.2rem; margin-bottom: 8px;">لا توجد مصادر IPTV حالياً</h3>
-        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">قم بإضافة روابط M3U أو خوادم Xtream لربطها وتزامنها مع جهازك.</p>
-        <button class="btn btn-primary" onclick="openAddSourceModal()">
-          <i class="fa-solid fa-plus"></i> إضافة مصدر جديد
+      <div style="text-align: center; padding: 40px 20px; color: var(--text-muted); background: var(--bg-card); border-radius: var(--border-radius-sm); border: 1px dashed var(--border-color);">
+        <i class="fa-solid fa-satellite-dish fa-3x" style="color: var(--text-dim); margin-bottom: 12px; display: block;"></i>
+        <h3 style="font-size: 1.1rem; color: #fff; margin-bottom: 6px;">لا توجد قوائم تشغيل لهذا الجهاز</h3>
+        <p style="font-size: 0.88rem; margin-bottom: 16px;">لم تتم إضافة قوائم لهذا الجهاز بعد. انقر على «إضافة قائمة جديدة» لبدء إضافة مصادر البث.</p>
+        <button class="btn btn-primary btn-sm" onclick="openAddSourceModal()">
+          <i class="fa-solid fa-plus"></i> إضافة أول قائمة لهذا الجهاز
         </button>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = filtered.map(source => {
-    const statusInfo = getStatusInfo(source.status);
-    const isChecked = source.enabled === 1 ? 'checked' : '';
-    const maskedUrl = source.server_url.length > 38 ? source.server_url.substring(0, 38) + '...' : source.server_url;
-    const timeFormatted = source.last_tested_at ? new Date(source.last_tested_at * 1000).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'لم يتم';
+  container.innerHTML = filtered.map(src => {
+    const isEnabled = Boolean(src.is_enabled ?? src.enabled);
+    const isXtream = src.source_type === 'xtream';
+    const typeBadge = isXtream
+      ? `<span class="badge badge-purple"><i class="fa-solid fa-server"></i> Xtream</span>`
+      : `<span class="badge badge-blue"><i class="fa-solid fa-file-lines"></i> M3U</span>`;
+
+    let statusBadge = `<span class="badge badge-gray">غير مفحوص</span>`;
+    if (src.status === 'working') {
+      statusBadge = `<span class="badge badge-green"><i class="fa-solid fa-circle-check"></i> يعمل بنجاح</span>`;
+    } else if (src.status === 'connection_failed') {
+      statusBadge = `<span class="badge badge-red"><i class="fa-solid fa-circle-xmark"></i> فشل الاتصال</span>`;
+    }
+
+    const maskedUrl = maskUrlCredentials(src.server_url);
 
     return `
-      <div class="source-card" id="source-card-${source.id}">
-        <div>
-          <div class="source-card-top">
-            <span class="source-type-badge ${source.source_type}">${source.source_type === 'xtream' ? 'Xtream API' : 'M3U / M3U8'}</span>
-            <div class="status-pill ${source.status}">
-              ${statusInfo.icon}
-              <span>${statusInfo.label}</span>
-            </div>
+      <div class="playlist-card-item">
+        <div class="playlist-card-info">
+          <div class="playlist-card-title-row">
+            <span class="playlist-card-title">${escapeHtml(src.name)}</span>
+            ${typeBadge}
+            ${statusBadge}
           </div>
-          <h4 class="source-name">${escapeHtml(source.name)}</h4>
-          <div class="source-url-text" title="${escapeHtml(source.server_url)}">
-            <i class="fa-solid fa-link" style="margin-left: 6px; color: var(--primary);"></i>${escapeHtml(maskedUrl)}
-          </div>
-          ${source.description ? `<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">${escapeHtml(source.description)}</p>` : ''}
-          <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 14px;">
-            <i class="fa-regular fa-clock" style="margin-left: 4px;"></i> آخر فحص: ${timeFormatted}
+          <div class="playlist-card-meta">
+            <span class="playlist-card-url" title="${escapeHtml(maskedUrl)}">${escapeHtml(maskedUrl)}</span>
+            <span>الحالة: <strong style="color: ${isEnabled ? 'var(--success)' : 'var(--text-dim)'};">${isEnabled ? 'مفعلة' : 'معطلة'}</strong></span>
           </div>
         </div>
 
-        <div class="source-card-bottom">
-          <label class="switch-label">
-            <div class="switch">
-              <input type="checkbox" ${isChecked} onchange="toggleSourceEnabled(${source.id}, this.checked)">
-              <span class="slider"></span>
-            </div>
-            <span>${source.enabled ? 'مفعّل للتطبيق' : 'معطّل'}</span>
-          </label>
-
-          <div style="display: flex; gap: 6px;">
-            <button class="btn btn-secondary btn-icon" title="فحص المصدر" onclick="testSourceConnection(${source.id})">
-              <i class="fa-solid fa-vial" id="test-icon-${source.id}"></i>
-            </button>
-            <button class="btn btn-secondary btn-icon" title="تعديل" onclick="openEditSourceModal(${source.id})">
-              <i class="fa-solid fa-pen-to-square"></i>
-            </button>
-            <button class="btn btn-danger btn-icon" title="حذف المصدر" onclick="openDeleteSourceModal(${source.id}, '${escapeHtml(source.name)}')">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          </div>
+        <div class="playlist-card-actions">
+          <button class="action-btn" id="btnTestWebSrc_${src.id}" title="فحص الاتصال فوراً" onclick="testSourceConnection(${src.id})">
+            <i class="fa-solid fa-stethoscope" style="color: var(--primary);"></i>
+          </button>
+          <button class="action-btn" title="تعديل القائمة" onclick="openEditSourceModal(${src.id})">
+            <i class="fa-solid fa-pen-to-square" style="color: var(--warning);"></i>
+          </button>
+          <button class="action-btn danger" title="حذف القائمة" onclick="deleteSource(${src.id}, '${escapeHtml(src.name)}')">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
         </div>
       </div>
     `;
   }).join('');
 }
 
-function getStatusInfo(status) {
-  switch (status) {
-    case 'working':
-      return { label: 'يعمل بكفاءة', icon: '<i class="fa-solid fa-circle-check" style="color: var(--success);"></i>' };
-    case 'connection_failed':
-      return { label: 'فشل الاتصال', icon: '<i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i>' };
-    case 'auth_failed':
-      return { label: 'خطأ في بيانات الدخول', icon: '<i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>' };
-    case 'unavailable':
-      return { label: 'المصدر غير متاح', icon: '<i class="fa-solid fa-ban" style="color: var(--danger);"></i>' };
-    default:
-      return { label: 'لم يتم الاختبار', icon: '<i class="fa-solid fa-circle-question" style="color: var(--text-muted);"></i>' };
-  }
-}
-
-// ==========================================================================
-// IPTV Source CRUD Actions
-// ==========================================================================
-
-function openAddSourceModal() {
-  state.currentEditingSourceId = null;
-  if (DOM.sourceModalTitle) DOM.sourceModalTitle.textContent = 'إضافة مصدر IPTV جديد';
-  if (DOM.sourceForm) DOM.sourceForm.reset();
-  if (DOM.sourceEnabledCheckbox) DOM.sourceEnabledCheckbox.checked = true;
-  setSourceModalType('m3u');
-  openModal(DOM.modalSource);
-}
-
-function openEditSourceModal(id) {
-  const source = state.sources.find(s => s.id === id);
-  if (!source) return;
-
-  state.currentEditingSourceId = id;
-  if (DOM.sourceModalTitle) DOM.sourceModalTitle.textContent = 'تعديل مصدر IPTV';
-  if (DOM.sourceNameInput) DOM.sourceNameInput.value = source.name;
-  if (DOM.sourceDescInput) DOM.sourceDescInput.value = source.description || '';
-  if (DOM.sourceEnabledCheckbox) DOM.sourceEnabledCheckbox.checked = source.enabled === 1;
-
-  if (source.source_type === 'xtream') {
-    setSourceModalType('xtream');
-    if (DOM.xtreamServerInput) DOM.xtreamServerInput.value = source.server_url;
-    if (DOM.xtreamUserInput) DOM.xtreamUserInput.value = source.username || '';
-    if (DOM.xtreamPassInput) {
-      DOM.xtreamPassInput.value = '';
-      DOM.xtreamPassInput.placeholder = 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية';
-    }
-  } else {
-    setSourceModalType('m3u');
-    if (DOM.sourceUrlInput) DOM.sourceUrlInput.value = source.server_url;
-  }
-
-  openModal(DOM.modalSource);
-}
-
-function setSourceModalType(type) {
-  if (type === 'm3u') {
-    DOM.tabOptionM3u.classList.add('active');
-    DOM.tabOptionXtream.classList.remove('active');
-    DOM.m3uFields.classList.remove('hidden');
-    DOM.xtreamFields.classList.add('hidden');
-    DOM.sourceUrlInput.required = true;
-    DOM.xtreamServerInput.required = false;
-    DOM.xtreamUserInput.required = false;
-  } else {
-    DOM.tabOptionM3u.classList.remove('active');
-    DOM.tabOptionXtream.classList.add('active');
-    DOM.m3uFields.classList.add('hidden');
-    DOM.xtreamFields.classList.remove('hidden');
-    DOM.sourceUrlInput.required = false;
-    DOM.xtreamServerInput.required = true;
-    DOM.xtreamUserInput.required = true;
-  }
-}
-
-async function handleSaveSource(e) {
-  e.preventDefault();
-  const btn = document.getElementById('btnSaveSource');
-  setButtonLoading(btn, true, 'جارٍ الحفظ...');
-
-  const isXtream = DOM.tabOptionXtream.classList.contains('active');
-  let name = DOM.sourceNameInput.value.trim();
-  let server_url = isXtream ? DOM.xtreamServerInput.value.trim() : DOM.sourceUrlInput.value.trim();
-  let username = isXtream ? DOM.xtreamUserInput.value.trim() : '';
-  let password = isXtream ? DOM.xtreamPassInput.value.trim() : '';
-
-  // Smart extraction: If M3U contains Xtream parameters, extract credentials
-  if (!isXtream && !username && server_url.includes('username=') && server_url.includes('password=')) {
-    try {
-      const u = new URL(server_url);
-      const uVal = u.searchParams.get('username');
-      const pVal = u.searchParams.get('password');
-      if (uVal) username = uVal.trim();
-      if (pVal) password = pVal.trim();
-    } catch(e) {}
-  }
-
-  // If Xtream server URL contains query or extra path, clean it
-  if (isXtream && server_url) {
-    try {
-      const u = new URL(server_url);
-      server_url = `${u.protocol}//${u.host}`;
-      if (!username && u.searchParams.get('username')) username = u.searchParams.get('username').trim();
-      if (!password && u.searchParams.get('password')) password = u.searchParams.get('password').trim();
-    } catch(e) {}
-  }
-
-  const payload = {
-    name,
-    source_type: isXtream ? 'xtream' : 'm3u',
-    server_url,
-    username,
-    password,
-    description: DOM.sourceDescInput.value.trim(),
-    enabled: DOM.sourceEnabledCheckbox.checked
-  };
-
-  const isEdit = state.currentEditingSourceId !== null;
-  const url = isEdit ? `${API_BASE}/api/web/sources/${state.currentEditingSourceId}` : `${API_BASE}/api/web/sources`;
-  const method = isEdit ? 'PUT' : 'POST';
-
+async function handleUnlinkDevice() {
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-
-    if (res.ok && data.success) {
-      closeModal();
-      await loadSources();
-      await loadDeviceProfile();
-      await loadSyncPreview();
-    } else {
-      alert(data.error || 'تعذر حفظ المصدر، راجع الرابط والبيانات.');
-    }
-  } catch (err) {
-    alert('حدث خطأ في الاتصال بالخادم.');
-  } finally {
-    setButtonLoading(btn, false, 'حفظ المصدر');
-  }
-}
-
-async function toggleSourceEnabled(id, enabled) {
-  try {
-    const res = await fetch(`${API_BASE}/api/web/sources/${id}/toggle`, {
+    await fetch(`${API_BASE}/api/web/unlink`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      },
-      body: JSON.stringify({ enabled })
+      credentials: 'same-origin'
     });
-    if (res.ok) {
-      const src = state.sources.find(s => s.id === id);
-      if (src) src.enabled = enabled ? 1 : 0;
-      updateStats();
-      await loadDeviceProfile();
-      await loadSyncPreview();
-    }
   } catch (e) {}
+
+  state.device = null;
+  state.sources = [];
+  const headerDeviceBadge = document.getElementById('headerDeviceBadge');
+  if (headerDeviceBadge) headerDeviceBadge.classList.add('hidden');
+  showView('portal');
+  showToast('تم إلغاء ربط الجهاز من هذه الجلسة بنجاح', 'info');
 }
 
-async function testSourceConnection(id) {
-  const icon = document.getElementById(`test-icon-${id}`);
-  if (icon) {
-    icon.className = 'fa-solid fa-spinner fa-spin';
+async function testSourceConnection(sourceId) {
+  const btn = document.getElementById(`btnTestWebSrc_${sourceId}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="color: var(--primary);"></i>`;
   }
 
   try {
-    const res = await fetch(`${API_BASE}/api/web/sources/${id}/test`, {
+    const res = await fetch(`${API_BASE}/api/web/sources/${sourceId}/test`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${state.token}` }
+      credentials: 'same-origin'
     });
     const data = await res.json();
-
-    if (res.ok) {
-      const src = state.sources.find(s => s.id === id);
-      if (src) {
-        src.status = data.status;
-        src.last_tested_at = data.last_tested_at;
-      }
-      renderSources();
-      updateStats();
-      if (data.message) {
-        alert(data.message);
-      }
+    if (data.status === 'working') {
+      showToast(`نجح الفحص: ${data.message || 'المصدر يعمل بكفاءة'}`, 'success');
+    } else {
+      showToast(`تنبيه: ${data.message || 'فشل الاتصال بالمصدر'}`, 'warning');
     }
-  } catch (err) {
-    console.error('Test error:', err);
+    await loadSources();
+  } catch (e) {
+    showToast('خطأ في الاتصال بالسيرفر أثناء الفحص', 'danger');
   } finally {
-    if (icon) {
-      icon.className = 'fa-solid fa-vial';
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-stethoscope" style="color: var(--primary);"></i>`;
     }
   }
 }
 
-function openDeleteSourceModal(id, name) {
-  const modalText = document.getElementById('deleteSourceNameText');
-  if (modalText) modalText.textContent = name;
-  const btn = document.getElementById('btnConfirmDeleteSource');
-  if (btn) {
-    btn.onclick = async () => {
-      setButtonLoading(btn, true, 'جارٍ الحذف...');
-      try {
-        const res = await fetch(`${API_BASE}/api/web/sources/${id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${state.token}` }
-        });
-        if (res.ok) {
-          closeModal();
-          await loadSources();
-          await loadDeviceProfile();
-          await loadSyncPreview();
-        }
-      } catch (e) {
-        alert('تعذر حذف المصدر.');
-      } finally {
-        setButtonLoading(btn, false, 'تأكيد الحذف');
-      }
-    };
-  }
-  openModal(DOM.modalDelete);
-}
-
-// ==========================================================================
-// Android App Sync Preview & Integration
-// ==========================================================================
-
-async function loadSyncPreview() {
-  if (!DOM.syncPayloadViewer || !state.token) return;
-  DOM.syncPayloadViewer.textContent = 'جارٍ جلب حزمة المزامنة الخاصة بجهاز Android...';
+async function deleteSource(sourceId, sourceName) {
+  if (!confirm(`هل أنت متأكد من حذف قائمة التشغيل «${sourceName}»؟ لن يتمكن هذا الجهاز من الوصول إليها بعد الحذف.`)) return;
 
   try {
-    const res = await fetch(`${API_BASE}/api/web/sync-preview`, {
-      headers: { 'Authorization': `Bearer ${state.token}` }
+    const res = await fetch(`${API_BASE}/api/web/sources/${sourceId}`, {
+      method: 'DELETE',
+      credentials: 'same-origin'
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      state.syncPreview = data;
-      DOM.syncPayloadViewer.textContent = JSON.stringify(data, null, 2);
+      showToast('تم حذف قائمة التشغيل بنجاح', 'success');
+      await loadSources();
     } else {
-      DOM.syncPayloadViewer.textContent = '// تعذر جلب حزمة المزامنة';
+      showToast(data.error || 'فشل حذف القائمة', 'danger');
     }
   } catch (e) {
-    DOM.syncPayloadViewer.textContent = '// خطأ في الاتصال بالخادم';
+    showToast('تعذر حذف القائمة', 'danger');
   }
 }
 
-// ==========================================================================
-// Tabs & Modal Helpers
-// ==========================================================================
+// ================= 5. Add / Edit Source Modal =================
 
-function switchTab(tabName) {
-  state.activeTab = tabName;
-  document.querySelectorAll('.tab-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === tabName);
-  });
-  document.querySelectorAll('.tab-content-panel').forEach(panel => {
-    panel.classList.toggle('hidden', panel.id !== `tabPanel-${tabName}`);
-  });
+function initSourceModals() {
+  const btnOpenAdd = document.getElementById('btnOpenAddSource');
+  if (btnOpenAdd) {
+    btnOpenAdd.addEventListener('click', openAddSourceModal);
+  }
 
-  if (tabName === 'sync') {
-    loadSyncPreview();
+  const closeBtn = document.getElementById('closeSourceModal');
+  const cancelBtn = document.getElementById('cancelSourceModalBtn');
+  const modal = document.getElementById('modalSource');
+
+  if (closeBtn) closeBtn.addEventListener('click', () => modal?.classList.add('hidden'));
+  if (cancelBtn) cancelBtn.addEventListener('click', () => modal?.classList.add('hidden'));
+
+  const tabM3u = document.getElementById('tabOptionM3u');
+  const tabXtream = document.getElementById('tabOptionXtream');
+  if (tabM3u && tabXtream) {
+    tabM3u.addEventListener('click', () => setSourceModalType('m3u'));
+    tabXtream.addEventListener('click', () => setSourceModalType('xtream'));
+  }
+
+  const form = document.getElementById('sourceForm');
+  if (form) {
+    form.addEventListener('submit', handleSaveSourceForm);
   }
 }
 
-function openModal(modalEl) {
-  if (!modalEl) return;
-  modalEl.classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+let activeSourceTypeInModal = 'm3u';
+
+window.openAddSourceModal = function () {
+  state.currentEditingSourceId = null;
+  hideAlert('modalSourceAlert');
+
+  const titleEl = document.getElementById('sourceModalTitle');
+  if (titleEl) titleEl.textContent = 'إضافة قائمة تشغيل جديدة للجهاز';
+
+  const form = document.getElementById('sourceForm');
+  if (form) form.reset();
+
+  setSourceModalType('m3u');
+  document.getElementById('modalSource')?.classList.remove('hidden');
+};
+
+window.openEditSourceModal = function (sourceId) {
+  state.currentEditingSourceId = sourceId;
+  hideAlert('modalSourceAlert');
+
+  const src = state.sources.find(s => s.id === sourceId);
+  if (!src) return;
+
+  const titleEl = document.getElementById('sourceModalTitle');
+  if (titleEl) titleEl.textContent = `تعديل قائمة: ${src.name}`;
+
+  document.getElementById('sourceNameInput').value = src.name || '';
+  const type = src.source_type || 'm3u';
+  setSourceModalType(type);
+
+  if (type === 'xtream') {
+    document.getElementById('xtreamServerInput').value = src.server_url || '';
+    document.getElementById('xtreamUserInput').value = src.username || '';
+    document.getElementById('xtreamPassInput').value = '';
+  } else {
+    document.getElementById('sourceUrlInput').value = src.server_url || '';
+  }
+
+  document.getElementById('modalSource')?.classList.remove('hidden');
+};
+
+function setSourceModalType(type) {
+  activeSourceTypeInModal = type;
+  const tabM3u = document.getElementById('tabOptionM3u');
+  const tabXtream = document.getElementById('tabOptionXtream');
+  const m3uFields = document.getElementById('m3uFields');
+  const xtreamFields = document.getElementById('xtreamFields');
+
+  if (type === 'm3u') {
+    tabM3u?.style.setProperty('border-color', 'var(--primary)');
+    tabXtream?.style.removeProperty('border-color');
+    m3uFields?.classList.remove('hidden');
+    xtreamFields?.classList.add('hidden');
+  } else {
+    tabXtream?.style.setProperty('border-color', 'var(--primary)');
+    tabM3u?.style.removeProperty('border-color');
+    m3uFields?.classList.add('hidden');
+    xtreamFields?.classList.remove('hidden');
+  }
 }
 
-function closeModal() {
-  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'));
-  document.body.style.overflow = '';
+async function handleSaveSourceForm(e) {
+  e.preventDefault();
+  hideAlert('modalSourceAlert');
+
+  const name = document.getElementById('sourceNameInput')?.value.trim();
+  const submitBtn = document.getElementById('btnSaveSource');
+
+  let server_url = '';
+  let username = '';
+  let password = '';
+
+  if (activeSourceTypeInModal === 'xtream') {
+    server_url = document.getElementById('xtreamServerInput')?.value.trim();
+    username = document.getElementById('xtreamUserInput')?.value.trim();
+    password = document.getElementById('xtreamPassInput')?.value.trim();
+  } else {
+    server_url = document.getElementById('sourceUrlInput')?.value.trim();
+  }
+
+  if (!name || !server_url) {
+    showAlert('modalSourceAlert', 'يرجى إدخال اسم القائمة ورابط السيرفر.', 'danger');
+    return;
+  }
+
+  submitBtn.disabled = true;
+
+  try {
+    const payload = {
+      name,
+      source_type: activeSourceTypeInModal,
+      server_url,
+      username: activeSourceTypeInModal === 'xtream' ? username : '',
+      enabled: 1
+    };
+    if (password) {
+      payload.password = password;
+    }
+
+    const isEdit = Boolean(state.currentEditingSourceId);
+    const url = isEdit
+      ? `${API_BASE}/api/web/sources/${state.currentEditingSourceId}`
+      : `${API_BASE}/api/web/sources`;
+    const method = isEdit ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'same-origin'
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      document.getElementById('modalSource')?.classList.add('hidden');
+      showToast(isEdit ? 'تم حفظ التعديلات بنجاح' : 'تمت إضافة القائمة بنجاح', 'success');
+      await loadSources();
+    } else {
+      showAlert('modalSourceAlert', data.error || 'فشل حفظ القائمة', 'danger');
+    }
+  } catch (err) {
+    showAlert('modalSourceAlert', 'تعذر حفظ القائمة: خطأ في الاتصال بالخادم', 'danger');
+  } finally {
+    submitBtn.disabled = false;
+  }
 }
 
-function showAlert(el, msg, type = 'danger') {
+// ================= Utility Helpers =================
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function maskUrlCredentials(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has('password')) {
+      u.searchParams.set('password', '••••••••');
+    }
+    if (u.password) {
+      u.password = '••••••••';
+    }
+    return u.toString();
+  } catch (e) {
+    return url.replace(/([?&]password=)[^&]*/gi, '$1••••••••');
+  }
+}
+
+function showAlert(elementId, message, type = 'danger') {
+  const el = document.getElementById(elementId);
   if (!el) return;
   el.className = `alert-box ${type}`;
-  el.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> <span>${msg}</span>`;
+  el.innerHTML = `<span>${escapeHtml(message)}</span>`;
   el.classList.remove('hidden');
 }
 
-function hideAlert(el) {
-  if (!el) return;
-  el.classList.add('hidden');
+function hideAlert(elementId) {
+  const el = document.getElementById(elementId);
+  if (el) el.classList.add('hidden');
 }
 
-function setButtonLoading(btn, isLoading, text) {
-  if (!btn) return;
-  btn.disabled = isLoading;
-  btn.innerHTML = isLoading ? `<i class="fa-solid fa-spinner fa-spin"></i> ${text}` : text;
-}
+function showToast(message, type = 'success') {
+  let toast = document.getElementById('globalToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'globalToast';
+    toast.style.position = 'fixed';
+    toast.style.bottom = '24px';
+    toast.style.left = '24px';
+    toast.style.zIndex = '99999';
+    toast.style.padding = '12px 20px';
+    toast.style.borderRadius = '8px';
+    toast.style.fontSize = '0.92rem';
+    toast.style.fontWeight = '600';
+    toast.style.boxShadow = '0 10px 25px rgba(0,0,0,0.4)';
+    toast.style.transition = 'all 0.3s ease';
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.gap = '10px';
+    document.body.appendChild(toast);
+  }
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+  if (type === 'success') {
+    toast.style.background = 'var(--success, #10b981)';
+    toast.style.color = '#ffffff';
+    toast.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>${escapeHtml(message)}</span>`;
+  } else if (type === 'info') {
+    toast.style.background = 'var(--primary, #6366f1)';
+    toast.style.color = '#ffffff';
+    toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> <span>${escapeHtml(message)}</span>`;
+  } else {
+    toast.style.background = 'var(--danger, #ef4444)';
+    toast.style.color = '#ffffff';
+    toast.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> <span>${escapeHtml(message)}</span>`;
+  }
+
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+
+  clearTimeout(toast.dismissTimer);
+  toast.dismissTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(12px)';
+  }, 4000);
 }

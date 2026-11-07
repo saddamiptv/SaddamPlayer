@@ -338,7 +338,7 @@ async function handleAdminLogout() {
       console.warn('Logout API call failed:', e);
     }
     setUnauthenticated();
-    showToast('تم إنهاء الجلسة الإدارية بنجاح', 'info');
+    window.location.href = 'index.html';
   });
 }
 

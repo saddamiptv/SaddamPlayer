@@ -10,7 +10,7 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
 
-  <title>SADDAM IPTV - بوابة ربط الأجهزة ومصادر البث</title>
+  <title>SADDAM IPTV - بوابة التحكم وإقران الأجهزة</title>
   <meta name="description" content="البوابة الرسمية لتطبيق SADDAM IPTV لإدارة أجهزة البث وإضافة مصادر M3U و Xtream Codes مباشرة.">
   <link rel="icon" type="image/png" href="logo.png">
 
@@ -22,15 +22,15 @@
   <!-- FontAwesome 6 Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-  <!-- High-Performance Design System -->
+  <!-- Design System -->
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-  <!-- Site Header -->
+  <!-- ================= Site Header ================= -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="index.html" class="brand-link">
+      <a href="index.html" class="brand-link" id="brandHomeLink">
         <img src="logo.png" alt="SADDAM IPTV Logo" class="brand-logo-img">
         <div class="brand-title">
           <span>SADDAM</span>
@@ -40,41 +40,170 @@
       </a>
 
       <div class="header-actions">
+        <!-- Logged-in Admin Pill (Shown when authenticated) -->
+        <div id="adminUserBadge" class="admin-slot-pill hidden">
+          <i class="fa-solid fa-user-shield" style="color: var(--primary);"></i>
+          <span id="adminUserText" style="font-weight: 700;">مشرف</span>
+        </div>
+
         <!-- Device Info Badge (Shown only when device is paired) -->
         <div id="headerDeviceBadge" class="admin-slot-pill hidden">
-          <i class="fa-solid fa-circle-check" style="color: var(--success);"></i>
+          <i class="fa-solid fa-tv" style="color: var(--success);"></i>
           <span id="deviceMacMasked" class="latin-code" style="font-weight: 700; color: #fff;"></span>
         </div>
 
-        <!-- Logout / Disconnect Button (Shown only when device is paired) -->
-        <button id="btnLogout" class="btn btn-danger btn-sm hidden" title="إنهاء الجلسة">
+        <!-- Back to Portal Home Button (Shown when in pairing or device dashboard) -->
+        <button id="btnHeaderPortal" class="btn btn-secondary btn-sm hidden" title="العودة إلى البوابة الرئيسية">
+          <i class="fa-solid fa-house"></i>
+          <span>الرئيسية</span>
+        </button>
+
+        <!-- Admin Panel Button (Shown when authenticated) -->
+        <a href="admin.html" id="btnAdminAccess" class="btn btn-primary btn-sm hidden" title="الانتقال إلى لوحة الإدارة">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>لوحة الإدارة</span>
+        </a>
+
+        <!-- Logout Button (Shown when authenticated) -->
+        <button id="btnLogout" class="btn btn-danger btn-sm hidden" title="إنهاء الجلسة وتسجيل الخروج">
           <i class="fa-solid fa-power-off"></i>
           <span>خروج</span>
         </button>
-
-        <!-- Clearly Visible Admin Button at the Top of the Main Page -->
-        <a href="admin.html" id="btnAdminAccess" class="btn btn-primary btn-sm" title="لوحة الإدارة">
-          <i class="fa-solid fa-user-shield"></i>
-          <span>Admin</span>
-        </a>
       </div>
     </div>
   </header>
 
-  <!-- Main Content Area -->
+  <!-- ================= Main Content Area ================= -->
   <main style="flex: 1; padding: 24px 0;">
     <div class="container">
 
       <!-- ====================================================================
-           PAGE: DEVICE PAIRING LOGIN (Default Landing Page)
+           VIEW 1: PRIMARY LOGIN SCREEN (Gated Entry - SPD Section 2)
+           Shown immediately on visiting site without an active session
            ==================================================================== -->
-      <section id="pairingSection" class="auth-wrapper">
+      <section id="loginSection" class="auth-wrapper">
         <div class="auth-card">
           <div class="auth-header">
             <img src="logo.png" alt="SADDAM IPTV Logo" class="auth-logo">
-            <h1 class="auth-title">ربط <span class="gradient-text">جهازك</span></h1>
+            <h1 class="auth-title">تسجيل الدخول إلى <span class="gradient-text">البوابة</span></h1>
             <p class="auth-subtitle">
-              أدخل رمز <strong>MAC</strong> وكود <strong>PIN</strong> الظاهرين في تطبيق SADDAM IPTV على شاشتك للمتابعة وإدارة مصادر البث.
+              يرجى تسجيل الدخول بحساب المشرف للوصول إلى بوابة إقران الأجهزة ولوحة الإدارة
+            </p>
+          </div>
+
+          <!-- Alert Container -->
+          <div id="loginAlert" class="alert-box hidden"></div>
+
+          <!-- Main Login Form (Username + Password only) -->
+          <form id="mainLoginForm">
+            <div class="form-group">
+              <label class="form-label" for="loginUsername">اسم المستخدم</label>
+              <div class="input-wrapper">
+                <input 
+                  type="text" 
+                  id="loginUsername" 
+                  class="form-input" 
+                  placeholder="أدخل اسم المستخدم" 
+                  autocomplete="username" 
+                  required
+                >
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="loginPassword">كلمة المرور</label>
+              <div class="input-wrapper">
+                <input 
+                  type="password" 
+                  id="loginPassword" 
+                  class="form-input" 
+                  placeholder="أدخل كلمة المرور" 
+                  autocomplete="current-password" 
+                  required
+                >
+                <button type="button" id="toggleLoginPassword" class="password-toggle-btn" title="إظهار / إخفاء كلمة المرور">
+                  <i class="fa-solid fa-eye" id="loginPasswordEye"></i>
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" id="btnLoginSubmit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
+              <span id="btnLoginText">تسجيل الدخول</span>
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           VIEW 2: PORTAL HOME (After Successful Login - SPD Section 3)
+           Offers two clear options: Pair Device OR Admin Panel
+           ==================================================================== -->
+      <section id="portalSection" class="portal-wrapper hidden">
+        <div class="portal-welcome-card">
+          <h2 style="font-size: 1.6rem; color: #fff; margin-bottom: 8px;">
+            مرحباً بك في بوابة <span class="gradient-text">SADDAM IPTV</span>
+          </h2>
+          <p style="color: var(--text-muted); font-size: 0.95rem;">
+            جلسة الدخول نشطة ومؤمنة. اختر الإجراء المطلوب للمتابعة:
+          </p>
+        </div>
+
+        <div class="portal-grid">
+          <!-- Button 1: Pair Device (إقران جهاز) -->
+          <div class="portal-card" id="cardPairDevice">
+            <div>
+              <div class="portal-card-icon blue">
+                <i class="fa-solid fa-tv"></i>
+              </div>
+              <h3 class="portal-card-title">إقران جهاز المشترك</h3>
+              <p class="portal-card-desc">
+                إدخال كود <strong>MAC Address</strong> و <strong>Device Key</strong> الخاص بجهاز محدد للتحقق منه وإدارة قنواته ومصادر البث التابعة له حصراً.
+              </p>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnOpenPairingView" style="width: 100%;">
+              <i class="fa-solid fa-link"></i>
+              <span>إقران جهاز (Pair Device)</span>
+            </button>
+          </div>
+
+          <!-- Button 2: Admin Panel (لوحة الإدارة) -->
+          <a href="admin.html" class="portal-card" id="cardAdminPanel">
+            <div>
+              <div class="portal-card-icon purple">
+                <i class="fa-solid fa-user-shield"></i>
+              </div>
+              <h3 class="portal-card-title">لوحة الإدارة الشاملة</h3>
+              <p class="portal-card-desc">
+                إدارة كاملة لكافة أجهزة المشتركين، قوائم التشغيل، نشاط الأجهزة، المزامنة، وسجل العمليات الأمني وإعدادات النظام.
+              </p>
+            </div>
+            <div class="btn btn-secondary" style="width: 100%; text-align: center;">
+              <i class="fa-solid fa-chart-pie"></i>
+              <span>لوحة الإدارة (Admin Panel)</span>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           VIEW 3: DEVICE PAIRING SCREEN (SPD Section 3.1 & 5)
+           Requires valid MAC Address + Device Key (PIN)
+           ==================================================================== -->
+      <section id="pairingSection" class="auth-wrapper hidden">
+        <div class="auth-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <button type="button" id="btnBackToPortalFromPairing" class="btn btn-secondary btn-sm">
+              <i class="fa-solid fa-arrow-right"></i>
+              <span>العودة للبوابة</span>
+            </button>
+            <span class="badge badge-blue">إقران جهاز</span>
+          </div>
+
+          <div class="auth-header">
+            <h1 class="auth-title">إقران <span class="gradient-text">جهاز المشترك</span></h1>
+            <p class="auth-subtitle">
+              أدخل رمز <strong>MAC</strong> ومفتاح الجهاز <strong>Device Key (PIN)</strong> الظاهرين في تطبيق SADDAM IPTV على شاشة المشترك.
             </p>
           </div>
 
@@ -104,7 +233,7 @@
 
             <div class="form-group">
               <label class="form-label" for="pinInput">
-                <span>رمز PIN (6 أرقام)</span>
+                <span>مفتاح الجهاز / PIN (6 أرقام)</span>
               </label>
               <div class="input-wrapper">
                 <input 
@@ -125,7 +254,7 @@
             </div>
 
             <button type="submit" id="btnPair" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
-              <span id="btnPairText">التحقق وربط الجهاز</span>
+              <span id="btnPairText">التحقق وإقران الجهاز</span>
               <i class="fa-solid fa-arrow-left"></i>
             </button>
           </form>
@@ -133,7 +262,7 @@
       </section>
 
       <!-- ====================================================================
-           PAIRED DEVICE DASHBOARD (Manage Playlists for This Device)
+           VIEW 4: PAIRED DEVICE DASHBOARD (Manage Playlists for This Device)
            ==================================================================== -->
       <section id="dashboardSection" class="hidden">
         
@@ -141,18 +270,30 @@
         <div class="content-card">
           <div class="flex-between">
             <div>
-              <h2 id="deviceLabel" style="font-size: 1.2rem; color: #fff; margin-bottom: 4px;">جهاز التلفاز</h2>
-              <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h2 id="deviceLabel" style="font-size: 1.2rem; color: #fff; margin-bottom: 4px;">جهاز التلفاز</h2>
+                <span class="badge badge-green"><i class="fa-solid fa-circle-check"></i> متصل بنجاح</span>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px;">
                 <span>MAC: <strong id="deviceMacFull" class="latin-code" style="color: #fff;">-</strong></span>
                 <span>المنصة: <strong id="devicePlatform">-</strong></span>
                 <span>المزامنة: <strong id="deviceSyncVersion" class="latin-code" style="color: var(--primary);">v1</strong></span>
               </div>
             </div>
-            <div style="display: flex; gap: 8px;">
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button id="btnBackToPortalFromDash" class="btn btn-secondary btn-sm" title="العودة للبوابة الرئيسية">
+                <i class="fa-solid fa-house"></i>
+                <span>البوابة الرئيسية</span>
+              </button>
+              <a href="admin.html" class="btn btn-secondary btn-sm" title="لوحة الإدارة">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>لوحة الإدارة</span>
+              </a>
               <button id="btnOpenAddSource" class="btn btn-primary btn-sm">
                 <i class="fa-solid fa-plus"></i> إضافة قائمة جديدة
               </button>
-              <button id="btnUnlink" class="btn btn-secondary btn-sm" title="إلغاء ربط هذا الجهاز">
+              <button id="btnUnlink" class="btn btn-danger btn-sm" title="إلغاء ربط هذا الجهاز من هذه الجلسة">
                 <i class="fa-solid fa-link-slash"></i> إلغاء الربط
               </button>
             </div>
@@ -191,7 +332,7 @@
           <div class="content-card-header">
             <h2 class="card-title">
               <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
-              <span>قوائم التشغيل المرتبطة بالجهاز</span>
+              <span>قوائم التشغيل التابعة لهذا الجهاز حصراً</span>
             </h2>
 
             <div style="display: flex; gap: 8px;">
@@ -218,14 +359,14 @@
   <div id="modalHelp" class="modal-overlay hidden">
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
-        <h3 class="card-title">أين أجد كود MAC و PIN؟</h3>
+        <h3 class="card-title">أين أجد كود MAC ومفتاح الجهاز PIN؟</h3>
         <button class="modal-close-btn" id="closeHelpModal"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-muted);">
-        1. افتح تطبيق <strong>SADDAM IPTV</strong> على جهاز التلفاز أو هاتفك.<br>
-        2. ستظهر لك شاشة الربط أو شاشة الإعدادات.<br>
-        3. يظهر كود الـ <strong>MAC</strong> وكود <strong>PIN</strong> بوضوح في أسفل الشاشة.<br>
-        4. أدخل الرمزين في هذه الصفحة للمتابعة والتحكم في قنواتك.
+        1. افتح تطبيق <strong>SADDAM IPTV</strong> على جهاز المشترك.<br>
+        2. ستظهر لك شاشة الإقران أو شاشة الإعدادات.<br>
+        3. يظهر كود الـ <strong>MAC Address</strong> و <strong>Device Key</strong> بوضوح في أسفل الشاشة.<br>
+        4. أدخل الرمزين في واجهة الإقران لربط الجهاز وإضافة القوائم له حصراً.
       </p>
     </div>
   </div>

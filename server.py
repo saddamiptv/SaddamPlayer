@@ -387,25 +387,22 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 })
 
         if path in ("/api/v1/devices/sources", "/api/v1/devices/playlists"):
-            device = self.authenticate_device()
             req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
             req_key = self.headers.get("X-Device-Key") or query.get("key", [""])[0] or query.get("pin", [""])[0]
 
-            if req_mac and req_key:
-                device = db.verify_device_credentials(req_mac, req_key)
+            clean_mac = security.normalize_mac(req_mac) if req_mac else ""
+            clean_pin = str(req_key).strip() if req_key else ""
 
-            if not device and req_mac:
-                clean_mac = security.normalize_mac(req_mac)
-                with db.get_db() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
-                    row = cursor.fetchone()
-                    if row:
-                        device = dict(row)
+            device = None
+            if clean_mac and clean_pin:
+                device = db.verify_device_credentials(clean_mac, clean_pin)
+            elif not clean_mac and not clean_pin:
+                device = self.authenticate_device()
 
             if not device:
-                return self.send_json(200, {
+                return self.send_json(401, {
                     "success": False,
+                    "error": "بيانات اعتماد الجهاز غير صحيحة أو غير مصرح بها",
                     "device_id": None,
                     "sync_version": 1,
                     "sources": [],
@@ -466,24 +463,21 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             })
 
         if path == "/api/v1/devices/sync":
-            device = self.authenticate_device()
-            if not device:
-                req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
-                if req_mac:
-                    clean_mac = security.normalize_mac(req_mac)
-                    with db.get_db() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
-                        row = cursor.fetchone()
-                        if row:
-                            device = dict(row)
+            req_mac = self.headers.get("X-Device-MAC") or query.get("mac", [""])[0]
+            req_key = self.headers.get("X-Device-Key") or query.get("key", [""])[0] or query.get("pin", [""])[0]
+            clean_mac = security.normalize_mac(req_mac) if req_mac else ""
+            clean_pin = str(req_key).strip() if req_key else ""
+
+            device = None
+            if clean_mac and clean_pin:
+                device = db.verify_device_credentials(clean_mac, clean_pin)
+            elif not clean_mac and not clean_pin:
+                device = self.authenticate_device()
 
             if not device:
-                return self.send_json(200, {
-                    "device_id": None,
-                    "sync_version": 1,
-                    "status": "waiting",
-                    "timestamp": int(time.time())
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "بيانات اعتماد الجهاز غير صحيحة أو غير مصرح بها"
                 })
 
             return self.send_json(200, {
@@ -580,8 +574,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
         body = self.parse_json_body()
 
-        # 1. Web Device Pairing (SDP Section 4)
+        # 1. Web Device Pairing (Gated by Admin Session per SPD Section 2 & 3)
         if path == "/api/web/pair":
+            if not self.authenticate_admin():
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "غير مصرح. يرجى تسجيل الدخول إلى الموقع بحساب المشرف أولاً للوصول إلى ربط الأجهزة."
+                })
+
             mac = body.get("mac", "").strip()
             pin = body.get("pin", "").strip()
             client_ip = self.client_address[0]
@@ -624,7 +624,6 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             with db.get_db() as conn:
                 conn.execute("UPDATE devices SET status = 'active', updated_at = ? WHERE id = ?", (int(time.time()), device["id"]))
                 conn.commit()
-            db.ensure_device_has_sources(device["id"])
             token = db.create_device_session(device["id"])
             db.log_audit("device_session", str(device["id"]), "pairing_successful", "device", str(device["id"]))
 
@@ -734,7 +733,6 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
             app_version = body.get("app_version", "1.4.0")
             client_pin = body.get("pin")
             dev = db.register_or_get_device(mac, label, platform, app_version)
-            db.ensure_device_has_sources(dev["id"])
             if client_pin and len(str(client_pin).strip()) == 6 and str(client_pin).strip().isdigit():
                 pin = db.set_device_pin(dev["id"], str(client_pin).strip(), expiry_minutes=52560000)
             else:
@@ -746,7 +744,7 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
                 "pin_expires_minutes": None
             })
 
-        # 7b. Android App: Sync Playlists with Exact MAC and Device Key (SPD Section 5)
+        # 7b. Android App: Sync Playlists with Exact MAC and Device Key (SPD Section 5 & 6)
         if path in ("/api/v1/devices/playlists", "/api/v1/devices/sync-playlists", "/api/v1/devices/sources"):
             mac = body.get("mac_address") or body.get("mac") or self.headers.get("X-Device-MAC", "")
             key = body.get("device_key") or body.get("key") or body.get("pin") or self.headers.get("X-Device-Key", "")
@@ -762,20 +760,10 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
             device = db.verify_device_credentials(clean_mac, clean_pin)
             if not device:
-                # Check if device is registered at all
-                with db.get_db() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT id FROM devices WHERE device_code = ?", (clean_mac,))
-                    dev_row = cursor.fetchone()
-                if not dev_row:
-                    return self.send_json(401, {
-                        "success": False,
-                        "error": "الجهاز غير مسجل أو البيانات غير صحيحة",
-                        "playlists": []
-                    })
+                # Generic timing-safe error without revealing whether MAC or Key was incorrect (SPD Section 5)
                 return self.send_json(401, {
                     "success": False,
-                    "error": "مفتاح الجهاز غير متطابق مع هذا الـ MAC",
+                    "error": "بيانات اعتماد الجهاز غير صحيحة أو غير مسجلة",
                     "playlists": []
                 })
 

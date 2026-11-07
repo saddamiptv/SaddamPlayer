@@ -167,6 +167,12 @@ def init_db():
         except Exception:
             pass
 
+        # Clean up orphaned sources whose device_id is no longer valid
+        try:
+            cursor.execute("DELETE FROM iptv_sources WHERE device_id NOT IN (SELECT id FROM devices)")
+        except Exception:
+            pass
+
         conn.commit()
 
     # Synchronize admin account configuration from environment or admin_config.json
@@ -489,40 +495,11 @@ def unlink_device(device_id: int):
 
 # IPTV Sources Management
 
-def ensure_device_has_sources(target_device_id: int):
-    """
-    Ensures a newly paired or active device doesn't lose custom IPTV sources.
-    If the target device has 0 sources, checks if any other device (like demo device 1
-    or a previously paired device) has custom user-added sources (id > 2) and automatically
-    migrates/copies them to this device so the user's added sources are never lost after pairing!
-    """
-    now = int(time.time())
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM iptv_sources WHERE device_id = ?", (target_device_id,))
-        count = cursor.fetchone()[0]
-        if count == 0:
-            cursor.execute("""
-                SELECT name, source_type, server_url, username, password_encrypted, description, status, enabled 
-                FROM iptv_sources 
-                WHERE name NOT IN ('باقة القنوات الرياضية والإخبارية المفتوحة (M3U)', 'خادم SADDAM Xtream Demo API')
-                ORDER BY id ASC
-            """)
-            custom_sources = cursor.fetchall()
-            if custom_sources:
-                for src in custom_sources:
-                    cursor.execute("""
-                        INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-                    """, (target_device_id, src["name"], src["source_type"], src["server_url"], src["username"], src["password_encrypted"], src["description"], src["status"], src["enabled"], now, now))
-                cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, target_device_id))
-                conn.commit()
-                log_audit("system", str(target_device_id), "sources_migrated_on_pairing", "device", str(target_device_id), {"count": len(custom_sources)})
-
-
 def get_device_sources(device_id: int, only_enabled: bool = False, mask_password: bool = True) -> List[Dict[str, Any]]:
-    """Retrieves all IPTV sources for a device."""
-    ensure_device_has_sources(device_id)
+    """
+    Retrieves all IPTV sources belonging strictly to this device_id.
+    Strictly isolated: does NOT copy or migrate sources from other devices.
+    """
     with get_db() as conn:
         cursor = conn.cursor()
         if only_enabled:
