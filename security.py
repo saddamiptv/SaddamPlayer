@@ -29,6 +29,16 @@ _ADMIN_RATE_LIMITS = {}
 MAX_ADMIN_LOGIN_ATTEMPTS = 5
 ADMIN_LOCKOUT_SECONDS = 300  # 5 minutes
 
+# Device login rate limiting (XDGO workflow)
+_DEVICE_RATE_LIMITS = {}
+MAX_DEVICE_LOGIN_ATTEMPTS = 5
+DEVICE_LOCKOUT_SECONDS = 300  # 5 minutes
+
+# Playlist PIN verification rate limiting
+_PLAYLIST_PIN_RATE_LIMITS = {}
+MAX_PIN_VERIFY_ATTEMPTS = 5
+PIN_VERIFY_LOCKOUT_SECONDS = 300  # 5 minutes
+
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
     """
@@ -113,6 +123,105 @@ def generate_device_pin() -> str:
     """Generates a secure 6-digit numeric PIN preserving leading zeros."""
     num = secrets.randbelow(1_000_000)
     return f"{num:06d}"
+
+
+def validate_device_key(key: str) -> bool:
+    """
+    Validates that a Device Key consists of exactly six numeric digits (000000 - 999999).
+    Leading zeros must be preserved and key must be a 6-character string.
+    """
+    if not key or not isinstance(key, str):
+        return False
+    clean = key.strip()
+    return len(clean) == 6 and clean.isdigit()
+
+
+def validate_playlist_pin(pin: str) -> bool:
+    """
+    Validates that an optional playlist protection PIN consists of exactly four numeric digits.
+    """
+    if not pin or not isinstance(pin, str):
+        return False
+    clean = pin.strip()
+    return len(clean) == 4 and clean.isdigit()
+
+
+def hash_playlist_pin(pin: str) -> str:
+    """Hashes a 4-digit playlist PIN with system salt using SHA-256."""
+    normalized = str(pin).strip()
+    return hashlib.sha256(f"playlist:{normalized}:{SYSTEM_SALT}".encode("utf-8")).hexdigest()
+
+
+def verify_playlist_pin(provided_pin: str, stored_hash: str) -> bool:
+    """Verifies a 4-digit playlist PIN against its stored hash using constant-time comparison."""
+    if not provided_pin or not stored_hash:
+        return False
+    candidate_hash = hash_playlist_pin(provided_pin)
+    return hmac.compare_digest(candidate_hash, stored_hash)
+
+
+def check_device_rate_limit(key: str) -> Tuple[bool, int]:
+    """
+    Checks if a key (IP or MAC) has exceeded maximum device login attempts.
+    Returns (is_allowed, seconds_remaining).
+    """
+    now = time.time()
+    attempts = _DEVICE_RATE_LIMITS.get(key, [])
+    attempts = [t for t in attempts if now - t < DEVICE_LOCKOUT_SECONDS]
+    _DEVICE_RATE_LIMITS[key] = attempts
+
+    if len(attempts) >= MAX_DEVICE_LOGIN_ATTEMPTS:
+        oldest = attempts[0]
+        remaining = int(DEVICE_LOCKOUT_SECONDS - (now - oldest))
+        return False, max(remaining, 1)
+
+    return True, 0
+
+
+def record_device_failed_attempt(key: str):
+    """Records a failed device login attempt."""
+    now = time.time()
+    attempts = _DEVICE_RATE_LIMITS.get(key, [])
+    attempts.append(now)
+    _DEVICE_RATE_LIMITS[key] = attempts
+
+
+def reset_device_rate_limit(key: str):
+    """Clears failed device login attempts on successful authentication."""
+    if key in _DEVICE_RATE_LIMITS:
+        del _DEVICE_RATE_LIMITS[key]
+
+
+def check_pin_rate_limit(key: str) -> Tuple[bool, int]:
+    """
+    Checks if a key has exceeded maximum failed playlist PIN attempts.
+    Returns (is_allowed, seconds_remaining).
+    """
+    now = time.time()
+    attempts = _PLAYLIST_PIN_RATE_LIMITS.get(key, [])
+    attempts = [t for t in attempts if now - t < PIN_VERIFY_LOCKOUT_SECONDS]
+    _PLAYLIST_PIN_RATE_LIMITS[key] = attempts
+
+    if len(attempts) >= MAX_PIN_VERIFY_ATTEMPTS:
+        oldest = attempts[0]
+        remaining = int(PIN_VERIFY_LOCKOUT_SECONDS - (now - oldest))
+        return False, max(remaining, 1)
+
+    return True, 0
+
+
+def record_pin_failed_attempt(key: str):
+    """Records a failed playlist PIN attempt."""
+    now = time.time()
+    attempts = _PLAYLIST_PIN_RATE_LIMITS.get(key, [])
+    attempts.append(now)
+    _PLAYLIST_PIN_RATE_LIMITS[key] = attempts
+
+
+def reset_pin_rate_limit(key: str):
+    """Clears failed PIN verification attempts."""
+    if key in _PLAYLIST_PIN_RATE_LIMITS:
+        del _PLAYLIST_PIN_RATE_LIMITS[key]
 
 
 import re

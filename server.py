@@ -224,7 +224,11 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
     # Helper: Extract device session token
     def get_auth_token(self) -> Optional[str]:
-        auth_header = self.headers.get("Authorization", "")
+        device_hdr = self.headers.get("X-Device-Session", "").strip()
+        if device_hdr:
+            return device_hdr
+
+        auth_header = self.headers.get("Authorization", "").strip()
         if auth_header.startswith("Bearer "):
             return auth_header[7:].strip()
 
@@ -232,6 +236,8 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         if cookie_header:
             cookies = [c.strip() for c in cookie_header.split(";")]
             for c in cookies:
+                if c.startswith("saddam_device_session="):
+                    return c.split("=", 1)[1].strip()
                 if c.startswith("saddam_session="):
                     return c.split("=", 1)[1].strip()
 
@@ -279,6 +285,75 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
+
+        # ================= XDGO Device Portal GET Endpoints =================
+        # Device Identity & Info
+        if path == "/api/device/me":
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            return self.send_json(200, {
+                "success": True,
+                "authenticated": True,
+                "device": {
+                    "id": device["id"],
+                    "mac": device["device_code"],
+                    "mac_masked": security.mask_mac(device["device_code"]),
+                    "label": device.get("device_label", "Player Device"),
+                    "status": device.get("status", "active"),
+                    "sync_version": device.get("sync_version", 1),
+                    "last_seen_at": device.get("last_seen_at")
+                }
+            })
+
+        # List Playlists Authorized for this Device
+        if path == "/api/device/playlists":
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            slot = device.get("account_slot", 1)
+            sources = db.get_account_sources(slot, only_enabled=False, mask_password=True)
+            return self.send_json(200, {
+                "success": True,
+                "playlists": sources,
+                "total": len(sources)
+            })
+
+        # Get Single Playlist Details for Device
+        if path.startswith("/api/device/playlists/") and not path.endswith(("/test", "/verify-pin", "/update", "/delete")):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-1])
+            slot = device.get("account_slot", 1)
+            source = db.get_source_for_device(source_id, device["id"], slot)
+            if not source:
+                return self.send_json(404, {"success": False, "error": "Playlist not found."})
+
+            # If protected, require valid PIN
+            pin = self.headers.get("X-Playlist-PIN", "")
+            if source.get("is_protected"):
+                if not pin or not db.verify_source_pin(source_id, pin):
+                    masked_url = "●●●●●●●● (Protected)"
+                    res_source = {
+                        "id": source["id"],
+                        "name": source["name"],
+                        "source_type": source["source_type"],
+                        "server_url": masked_url,
+                        "stream_url": masked_url,
+                        "is_protected": True,
+                        "pin_required": True,
+                        "status": source.get("status", "untested")
+                    }
+                    return self.send_json(200, {
+                        "success": True,
+                        "source": res_source,
+                        "playlist": res_source
+                    })
+
+            source["stream_url"] = source.get("server_url", "")
+            return self.send_json(200, {"success": True, "source": source, "playlist": source})
 
         # 1. API: Web Device & Account Info
         if path in ("/api/v1/auth/me", "/api/web/me"):
@@ -637,6 +712,228 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         body = self.parse_json_body()
+
+        # ================= XDGO Device Portal POST Endpoints =================
+        # 1. Device Login (MAC Address + 6-digit Device Key)
+        if path in ("/api/device/auth/login", "/api/v1/device/auth/login"):
+            mac = (body.get("mac_address") or body.get("mac") or "").strip()
+            key = (body.get("device_key") or body.get("key") or "").strip()
+            client_ip = self.client_address[0]
+            clean_mac = security.normalize_mac(mac)
+            clean_key = str(key).strip()
+            rate_key = f"device_login:{client_ip}:{clean_mac}"
+
+            allowed, retry_after = security.check_device_rate_limit(rate_key)
+            if not allowed:
+                return self.send_json(429, {
+                    "success": False,
+                    "error": f"Too many failed login attempts. Please wait {retry_after} seconds."
+                })
+
+            if not security.validate_mac_format(clean_mac) or not security.validate_device_key(clean_key):
+                security.record_device_failed_attempt(rate_key)
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "Invalid MAC Address or Device Key"
+                })
+
+            device = db.verify_device_credentials(clean_mac, clean_key)
+            if not device:
+                security.record_device_failed_attempt(rate_key)
+                db.log_audit("device", client_ip, "device_login_failed", "device", security.mask_mac(clean_mac))
+                return self.send_json(401, {
+                    "success": False,
+                    "error": "Invalid MAC Address or Device Key"
+                })
+
+            if device.get("status") != "active":
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "Device is currently blocked or inactive."
+                })
+
+            security.reset_device_rate_limit(rate_key)
+            token = db.create_device_session(device["id"])
+            db.log_audit("device", str(device["id"]), "device_logged_in", "device", str(device["id"]), {"mac": security.mask_mac(clean_mac)})
+
+            return self.send_json(200, {
+                "success": True,
+                "token": token,
+                "redirect": "/device/playlists",
+                "device": {
+                    "id": device["id"],
+                    "mac": device["device_code"],
+                    "mac_address": device["device_code"],
+                    "label": device.get("device_label", "Player Device"),
+                    "status": device.get("status", "active")
+                }
+            }, cookies={"saddam_device_session": token})
+
+        # 2. Device Logout
+        if path in ("/api/device/auth/logout", "/api/v1/device/auth/logout"):
+            token = self.get_auth_token()
+            if token:
+                db.revoke_session(token)
+            return self.send_json(200, {
+                "success": True,
+                "message": "Device session signed out successfully."
+            }, cookies={"saddam_device_session": "deleted; Max-Age=0"})
+
+        # 3. Device Playlist Management: Add Playlist
+        if path == "/api/device/playlists":
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+
+            name = body.get("name", "").strip()
+            source_type = (body.get("source_type") or body.get("playlist_type") or "m3u").strip().lower()
+            server_url = (body.get("server_url") or body.get("stream_url") or "").strip()
+
+            if not name or not server_url:
+                return self.send_json(400, {"success": False, "error": "Playlist name and URL are required."})
+
+            is_safe, msg = security.is_ssrf_safe_url(server_url)
+            if not is_safe:
+                return self.send_json(400, {"success": False, "error": msg})
+
+            body["server_url"] = server_url
+            body["source_type"] = source_type
+
+            # Check optional 4-digit PIN protection
+            is_protected = bool(body.get("is_protected"))
+            pin = str(body.get("pin", "")).strip()
+            confirm_pin = str(body.get("confirm_pin") or pin).strip()
+
+            if is_protected:
+                if not security.validate_playlist_pin(pin):
+                    return self.send_json(400, {"success": False, "error": "Playlist protection PIN must be exactly 4 digits."})
+                if pin != confirm_pin:
+                    return self.send_json(400, {"success": False, "error": "PIN and Confirmation PIN do not match."})
+                body["pin_hash"] = security.hash_playlist_pin(pin)
+                body["is_protected"] = 1
+            else:
+                body["is_protected"] = 0
+                body["pin_hash"] = None
+
+            slot = device.get("account_slot", 1)
+            new_source = db.add_iptv_source(device["id"], body, account_slot=slot)
+            return self.send_json(201, {"success": True, "source": new_source, "playlist": new_source})
+
+        # 4. Device Playlist: Verify 4-digit PIN
+        if path.startswith("/api/device/playlists/") and path.endswith("/verify-pin"):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-2])
+            pin = str(body.get("pin", "")).strip()
+            client_ip = self.client_address[0]
+            rate_key = f"pin_verify:{client_ip}:{source_id}"
+
+            allowed, retry_after = security.check_pin_rate_limit(rate_key)
+            if not allowed:
+                return self.send_json(429, {"success": False, "error": f"Too many PIN attempts. Please wait {retry_after} seconds."})
+
+            if not security.validate_playlist_pin(pin):
+                security.record_pin_failed_attempt(rate_key)
+                return self.send_json(401, {"success": False, "error": "Incorrect PIN"})
+
+            ok = db.verify_source_pin(source_id, pin)
+            if not ok:
+                security.record_pin_failed_attempt(rate_key)
+                return self.send_json(401, {"success": False, "error": "Incorrect PIN"})
+
+            security.reset_pin_rate_limit(rate_key)
+            return self.send_json(200, {"success": True, "message": "PIN verified successfully.", "unlocked": True})
+
+        # 5. Device Playlist: Test Connectivity
+        if path.startswith("/api/device/playlists/") and path.endswith("/test"):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-2])
+            slot = device.get("account_slot", 1)
+            src = db.get_source_for_device(source_id, device["id"], slot)
+            if not src:
+                return self.send_json(404, {"success": False, "error": "Playlist not found."})
+
+            test_status, error_code, message = probe_iptv_source(src)
+            db.update_source_status(source_id, test_status, error_code)
+            return self.send_json(200, {
+                "success": test_status == "working",
+                "status": test_status,
+                "error_code": error_code,
+                "message": message,
+                "last_tested_at": int(time.time())
+            })
+
+        # 6. Device Playlist: Update Playlist
+        if path.startswith("/api/device/playlists/") and path.endswith("/update"):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-2])
+            slot = device.get("account_slot", 1)
+
+            if "stream_url" in body and "server_url" not in body:
+                body["server_url"] = body["stream_url"]
+
+            existing = db.get_source_for_device(source_id, device["id"], slot)
+            if not existing:
+                return self.send_json(404, {"success": False, "error": "Playlist not found."})
+
+            # If existing is PIN-protected, verify PIN first
+            if existing.get("is_protected"):
+                provided_pin = str(body.get("pin") or self.headers.get("X-Playlist-PIN", "")).strip()
+                if not db.verify_source_pin(source_id, provided_pin):
+                    return self.send_json(403, {"success": False, "error": "Invalid or missing PIN for protected playlist."})
+
+            # Check if updating PIN
+            is_protected = bool(body.get("is_protected")) if "is_protected" in body else bool(existing.get("is_protected"))
+            new_pin = str(body.get("new_pin") or body.get("pin", "")).strip()
+            confirm_new_pin = str(body.get("confirm_pin") or body.get("confirm_new_pin") or new_pin).strip()
+
+            if is_protected and new_pin and new_pin != "••••":
+                if not security.validate_playlist_pin(new_pin):
+                    return self.send_json(400, {"success": False, "error": "Playlist protection PIN must be exactly 4 digits."})
+                if new_pin != confirm_new_pin:
+                    return self.send_json(400, {"success": False, "error": "PIN and Confirmation PIN do not match."})
+                body["pin_hash"] = security.hash_playlist_pin(new_pin)
+                body["is_protected"] = 1
+            elif not is_protected:
+                body["is_protected"] = 0
+                body["pin_hash"] = None
+
+            updated = db.update_iptv_source(source_id, device["id"], body, account_slot=slot)
+            return self.send_json(200, {"success": True, "source": updated})
+
+        # 7. Device Playlist: Delete Playlist (POST alternative)
+        if path.startswith("/api/device/playlists/") and path.endswith("/delete"):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-2])
+            slot = device.get("account_slot", 1)
+
+            if "stream_url" in body and "server_url" not in body:
+                body["server_url"] = body["stream_url"]
+
+            existing = db.get_source_for_device(source_id, device["id"], slot)
+            if not existing:
+                return self.send_json(404, {"success": False, "error": "Playlist not found."})
+
+            if existing.get("is_protected"):
+                pin = str(body.get("pin") or self.headers.get("X-Playlist-PIN", "")).strip()
+                if not pin or not db.verify_source_pin(source_id, pin):
+                    return self.send_json(403, {"success": False, "error": "Invalid or missing PIN for protected playlist."})
+
+            ok = db.delete_iptv_source(source_id, device["id"], account_slot=slot)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "Playlist deleted successfully."})
+            return self.send_json(404, {"error": "Playlist not found."})
 
         # 1. Web Device Pairing & Registration (Specification Section 3.4 & 7)
         if path in ("/api/v1/devices", "/api/v1/admin/devices/create", "/api/web/pair"):
@@ -1274,6 +1571,43 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
         body = self.parse_json_body()
 
+        # XDGO Device Portal: Update Playlist
+        if path.startswith("/api/device/playlists/"):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-1] if parts[-1].isdigit() else parts[-2])
+            slot = device.get("account_slot", 1)
+
+            existing = db.get_source_for_device(source_id, device["id"], slot)
+            if not existing:
+                return self.send_json(404, {"success": False, "error": "Playlist not found."})
+
+            if existing.get("is_protected"):
+                provided_pin = str(body.get("pin") or self.headers.get("X-Playlist-PIN", "")).strip()
+                if not db.verify_source_pin(source_id, provided_pin):
+                    return self.send_json(403, {"success": False, "error": "Invalid or missing PIN for protected playlist."})
+
+            # Check if updating PIN
+            is_protected = bool(body.get("is_protected")) if "is_protected" in body else bool(existing.get("is_protected"))
+            new_pin = str(body.get("new_pin") or body.get("pin", "")).strip()
+            confirm_new_pin = str(body.get("confirm_pin") or body.get("confirm_new_pin") or new_pin).strip()
+
+            if is_protected and new_pin and new_pin != "••••":
+                if not security.validate_playlist_pin(new_pin):
+                    return self.send_json(400, {"success": False, "error": "Playlist protection PIN must be exactly 4 digits."})
+                if new_pin != confirm_new_pin:
+                    return self.send_json(400, {"success": False, "error": "PIN and Confirmation PIN do not match."})
+                body["pin_hash"] = security.hash_playlist_pin(new_pin)
+                body["is_protected"] = 1
+            elif not is_protected:
+                body["is_protected"] = 0
+                body["pin_hash"] = None
+
+            updated = db.update_iptv_source(source_id, device["id"], body, account_slot=slot)
+            return self.send_json(200, {"success": True, "source": updated})
+
         if path.startswith("/api/web/sources/") or path.startswith("/api/v1/playlists/") or path.startswith("/api/v1/admin/sources/"):
             admin_sess = self.authenticate_admin()
             device = self.authenticate_device()
@@ -1304,6 +1638,29 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        # XDGO Device Portal: Delete Playlist
+        if path.startswith("/api/device/playlists/"):
+            device = self.authenticate_device()
+            if not device:
+                return self.send_json(401, {"success": False, "error": "Device authentication required."})
+            parts = path.strip("/").split("/")
+            source_id = int(parts[-1] if parts[-1].isdigit() else parts[-2])
+            slot = device.get("account_slot", 1)
+
+            existing = db.get_source_for_device(source_id, device["id"], slot)
+            if not existing:
+                return self.send_json(404, {"success": False, "error": "Playlist not found."})
+
+            if existing.get("is_protected"):
+                pin = str(self.headers.get("X-Playlist-PIN", "")).strip()
+                if not pin or not db.verify_source_pin(source_id, pin):
+                    return self.send_json(403, {"success": False, "error": "Invalid or missing PIN for protected playlist."})
+
+            ok = db.delete_iptv_source(source_id, device["id"], account_slot=slot)
+            if ok:
+                return self.send_json(200, {"success": True, "message": "Playlist deleted successfully."})
+            return self.send_json(404, {"error": "Playlist not found."})
 
         # Delete Playlist (Explicit user confirmation required)
         if path.startswith("/api/web/sources/") or path.startswith("/api/v1/playlists/") or path.startswith("/api/v1/admin/sources/"):
@@ -1358,8 +1715,14 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
         if path in ("/", ""):
             file_name = "index.html"
-        elif path in ("/admin", "/admin/"):
+        elif path in ("/admin", "/admin/", "/admin/devices"):
             file_name = "admin.html"
+        elif path in ("/device/login", "/device/login/", "/device-login"):
+            file_name = "device_login.html"
+        elif path in ("/device/playlists", "/device/playlists/", "/device-playlists"):
+            file_name = "device_playlists.html"
+        elif path in ("/login", "/login/", "/staff/login"):
+            file_name = "index.html"
         else:
             file_name = path.lstrip("/")
 

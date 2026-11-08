@@ -15,9 +15,10 @@ import time
 import os
 import urllib.parse
 from typing import Optional, Dict, Any, List, Tuple
+import security
 from security import (
     hash_pin, verify_pin, hash_token, normalize_mac, generate_session_token,
-    hash_password, verify_password
+    hash_password, verify_password, verify_playlist_pin, hash_playlist_pin
 )
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "saddam_iptv.db")
@@ -101,6 +102,8 @@ def init_db():
                 last_tested_at INTEGER,
                 last_error_code TEXT,
                 expires_at TEXT,
+                is_protected INTEGER DEFAULT 0,
+                pin_hash TEXT,
                 created_at INTEGER,
                 updated_at INTEGER
             )
@@ -111,6 +114,14 @@ def init_db():
             pass
         try:
             cursor.execute("ALTER TABLE iptv_sources ADD COLUMN account_slot INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE iptv_sources ADD COLUMN is_protected INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE iptv_sources ADD COLUMN pin_hash TEXT")
         except Exception:
             pass
         try:
@@ -663,6 +674,11 @@ def get_account_sources(account_slot: int, only_enabled: bool = False, mask_pass
             d['is_expired'] = is_expired
             d['status'] = status
 
+            # PIN protection flags (never expose raw pin_hash)
+            d['is_protected'] = bool(d.get('is_protected', 0))
+            d['has_pin'] = bool(d.get('pin_hash'))
+            d.pop('pin_hash', None)
+
             # Mask password for web frontend, but preserve for Android client
             raw_pwd = d.get('password_encrypted') or ""
             d['has_password'] = bool(raw_pwd)
@@ -713,6 +729,11 @@ def get_device_sources(device_id: int, only_enabled: bool = False, mask_password
             d['is_expired'] = is_expired
             d['status'] = status
 
+            # PIN protection flags (never expose raw pin_hash)
+            d['is_protected'] = bool(d.get('is_protected', 0))
+            d['has_pin'] = bool(d.get('pin_hash'))
+            d.pop('pin_hash', None)
+
             raw_pwd = d.get('password_encrypted') or ""
             d['has_password'] = bool(raw_pwd)
             if mask_password:
@@ -755,6 +776,8 @@ def add_iptv_source(device_id: Optional[int], data: dict, account_slot: Optional
         pass
 
     expires_at = data.get("expires_at")
+    is_protected = 1 if data.get("is_protected") else 0
+    pin_hash = data.get("pin_hash") or ""
 
     # Resolve account_slot
     resolved_slot = account_slot
@@ -771,9 +794,9 @@ def add_iptv_source(device_id: Optional[int], data: dict, account_slot: Optional
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO iptv_sources (device_id, account_slot, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, expires_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'untested', ?, NULL, ?, ?, ?)
-        """, (device_id, resolved_slot, name, source_type, server_url, username, password, description, enabled, expires_at, now, now))
+            INSERT INTO iptv_sources (device_id, account_slot, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, expires_at, is_protected, pin_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'untested', ?, NULL, ?, ?, ?, ?, ?)
+        """, (device_id, resolved_slot, name, source_type, server_url, username, password, description, enabled, expires_at, is_protected, pin_hash, now, now))
         source_id = cursor.lastrowid
 
         # Bump sync_version on device and account
@@ -784,6 +807,9 @@ def add_iptv_source(device_id: Optional[int], data: dict, account_slot: Optional
 
         cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
         res = dict(cursor.fetchone())
+        res["is_protected"] = bool(res.get("is_protected", 0))
+        res["has_pin"] = bool(res.get("pin_hash"))
+        res.pop("pin_hash", None)
         log_audit("account", str(resolved_slot), "source_added", "source", str(source_id), {"name": name, "type": source_type})
         return res
 
@@ -808,9 +834,10 @@ def update_iptv_source(source_id: int, device_id: Optional[int], data: dict, acc
         else:
             cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
 
-        existing = cursor.fetchone()
-        if not existing:
+        row = cursor.fetchone()
+        if not row:
             return None
+        existing = dict(row)
 
         # Auto-extract credentials if present in server_url
         try:
@@ -832,11 +859,15 @@ def update_iptv_source(source_id: int, device_id: Optional[int], data: dict, acc
 
         exp_to_store = expires_at if expires_at is not None else existing.get('expires_at')
 
+        # Handle PIN protection update
+        is_protected_val = 1 if data.get("is_protected") else (0 if "is_protected" in data else existing.get("is_protected", 0))
+        pin_hash_val = data.get("pin_hash") if "pin_hash" in data else existing.get("pin_hash")
+
         cursor.execute("""
             UPDATE iptv_sources
-            SET name = ?, server_url = ?, username = ?, password_encrypted = ?, description = ?, enabled = ?, expires_at = ?, updated_at = ?
+            SET name = ?, server_url = ?, username = ?, password_encrypted = ?, description = ?, enabled = ?, expires_at = ?, is_protected = ?, pin_hash = ?, updated_at = ?
             WHERE id = ?
-        """, (name, server_url, username, pwd_to_store, description, enabled, exp_to_store, now, source_id))
+        """, (name, server_url, username, pwd_to_store, description, enabled, exp_to_store, is_protected_val, pin_hash_val, now, source_id))
 
         if existing['device_id']:
             cursor.execute("UPDATE devices SET sync_version = sync_version + 1, updated_at = ? WHERE id = ?", (now, existing['device_id']))
@@ -846,8 +877,44 @@ def update_iptv_source(source_id: int, device_id: Optional[int], data: dict, acc
 
         cursor.execute("SELECT * FROM iptv_sources WHERE id = ?", (source_id,))
         res = dict(cursor.fetchone())
+        res["is_protected"] = bool(res.get("is_protected", 0))
+        res["has_pin"] = bool(res.get("pin_hash"))
+        res.pop("pin_hash", None)
         log_audit("source", str(source_id), "source_updated", "source", str(source_id), {"name": name})
         return res
+
+
+def verify_source_pin(source_id: int, pin: str) -> bool:
+    """Verifies a 4-digit PIN against the stored hash for a specific playlist."""
+    if not pin:
+        return False
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT pin_hash, is_protected FROM iptv_sources WHERE id = ?", (source_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        if not row['is_protected'] or not row['pin_hash']:
+            return True
+        return security.verify_playlist_pin(pin, row['pin_hash'])
+
+
+def get_source_for_device(source_id: int, device_id: int, account_slot: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Retrieves an IPTV source only if authorized for this device or account slot."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if account_slot:
+            cursor.execute("SELECT * FROM iptv_sources WHERE id = ? AND (device_id = ? OR account_slot = ?)", (source_id, device_id, account_slot))
+        else:
+            cursor.execute("SELECT * FROM iptv_sources WHERE id = ? AND device_id = ?", (source_id, device_id))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d['is_protected'] = bool(d.get('is_protected', 0))
+        d['has_pin'] = bool(d.get('pin_hash'))
+        d.pop('pin_hash', None)
+        return d
 
 
 def delete_iptv_source(source_id: int, device_id: Optional[int] = None, account_slot: Optional[int] = None) -> bool:

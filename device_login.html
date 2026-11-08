@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Security Headers -->
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+  <meta http-equiv="X-Frame-Options" content="DENY">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+
+  <title>SADDAM IPTV - Device Login</title>
+  <meta name="description" content="Device access portal for SADDAM IPTV players using MAC Address and Device Key.">
+  <link rel="icon" type="image/png" href="logo.png">
+
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Design System -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ================= Header ================= -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="device_login.html" class="brand-link">
+        <img src="logo.png" alt="SADDAM IPTV" class="brand-logo-img">
+        <div class="brand-title">
+          <span>SADDAM</span>
+          <span class="gradient-text">IPTV</span>
+          <span class="brand-badge">DEVICE PORTAL</span>
+        </div>
+      </a>
+
+      <div class="header-actions">
+        <!-- Switch to Staff Portal -->
+        <a href="index.html" class="btn btn-secondary btn-sm" title="Go to Administrator Login">
+          <i class="fa-solid fa-user-shield"></i>
+          <span>Staff Login</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= Main Content Container ================= -->
+  <main style="flex: 1;">
+    <div class="container">
+      <section class="auth-wrapper">
+        <div class="auth-card">
+          <div class="auth-header">
+            <img src="logo.png" alt="SADDAM IPTV" class="auth-logo">
+            <h1 class="auth-title">Device <span class="gradient-text">Login</span></h1>
+            <p class="auth-subtitle">Enter your player's MAC Address and 6-digit Device Key to access your playlists.</p>
+          </div>
+
+          <!-- Alert Container -->
+          <div id="deviceLoginAlert" class="alert-box alert-danger hidden"></div>
+
+          <!-- Device Login Form (MAC Address + 6-digit Device Key) -->
+          <form id="deviceLoginForm" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="macAddressInput">
+                MAC Address <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="text" id="macAddressInput" class="form-input code-font" placeholder="XX:XX:XX:XX:XX:XX" maxlength="17" autocomplete="off" required>
+              </div>
+              <span class="form-hint">Format: 00:1A:79:AB:CD:EF</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="deviceKeyInput">
+                Device Key <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="password" id="deviceKeyInput" class="form-input code-font" placeholder="6-digit numeric key (e.g. 004219)" maxlength="6" inputmode="numeric" autocomplete="off" required>
+                <button type="button" id="toggleDeviceKeyBtn" class="password-toggle-btn" title="Toggle device key visibility">
+                  <i class="fa-solid fa-eye" id="toggleDeviceKeyIcon"></i>
+                </button>
+              </div>
+              <span class="form-hint">Exactly six digits, including leading zeros.</span>
+            </div>
+
+            <button type="submit" id="btnDeviceLoginSubmit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 14px;">
+              <i class="fa-solid fa-arrow-right-to-bracket"></i>
+              <span id="deviceLoginBtnText">LOGIN</span>
+            </button>
+          </form>
+
+          <div class="auth-footer">
+            <p style="margin-bottom: 8px;">
+              <i class="fa-solid fa-tv" style="color: var(--primary); margin-right: 4px;"></i>
+              Need a Device Key? Ask staff to register your device.
+            </p>
+            <p style="font-size: 0.78rem;">
+              <a href="index.html" style="color: var(--text-muted); text-decoration: none;">Staff Member? Administrator Sign In &rarr;</a>
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ================= Footer ================= -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>SADDAM IPTV Device Access Portal &copy; 2026. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <!-- Page Logic -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Check existing session
+      checkExistingDeviceSession();
+
+      // MAC input auto-formatting
+      const macInput = document.getElementById('macAddressInput');
+      if (macInput) {
+        macInput.addEventListener('input', (e) => {
+          let val = e.target.value.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+          if (val.length > 12) val = val.substring(0, 12);
+          const parts = [];
+          for (let i = 0; i < val.length; i += 2) {
+            parts.push(val.substring(i, i + 2));
+          }
+          e.target.value = parts.join(':');
+        });
+      }
+
+      // Device Key filter (numeric only)
+      const keyInput = document.getElementById('deviceKeyInput');
+      if (keyInput) {
+        keyInput.addEventListener('input', (e) => {
+          e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
+        });
+      }
+
+      // Password toggle
+      const toggleBtn = document.getElementById('toggleDeviceKeyBtn');
+      if (toggleBtn && keyInput) {
+        toggleBtn.addEventListener('click', () => {
+          const icon = document.getElementById('toggleDeviceKeyIcon');
+          if (keyInput.type === 'password') {
+            keyInput.type = 'text';
+            icon.className = 'fa-solid fa-eye-slash';
+          } else {
+            keyInput.type = 'password';
+            icon.className = 'fa-solid fa-eye';
+          }
+        });
+      }
+
+      // Form submit
+      const form = document.getElementById('deviceLoginForm');
+      if (form) {
+        form.addEventListener('submit', handleDeviceLogin);
+      }
+    });
+
+    async function checkExistingDeviceSession() {
+      try {
+        const res = await fetch('/api/device/me', {
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' }
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.device) {
+          window.location.href = 'device_playlists.html';
+        }
+      } catch (e) {}
+    }
+
+    async function handleDeviceLogin(e) {
+      e.preventDefault();
+      const macInput = document.getElementById('macAddressInput');
+      const keyInput = document.getElementById('deviceKeyInput');
+      const alertBox = document.getElementById('deviceLoginAlert');
+      const submitBtn = document.getElementById('btnDeviceLoginSubmit');
+      const submitText = document.getElementById('deviceLoginBtnText');
+
+      const mac = macInput ? macInput.value.trim() : '';
+      const key = keyInput ? keyInput.value.trim() : '';
+
+      if (!mac || mac.length !== 17 || !/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(mac)) {
+        showAlert(alertBox, 'Please enter a valid 6-octet MAC address (e.g. 00:1A:79:AB:CD:EF).');
+        return;
+      }
+
+      if (!key || key.length !== 6 || !/^\d{6}$/.test(key)) {
+        showAlert(alertBox, 'Device Key must consist of exactly 6 numeric digits.');
+        return;
+      }
+
+      hideAlert(alertBox);
+      if (submitBtn) submitBtn.disabled = true;
+      if (submitText) submitText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Authenticating...';
+
+      try {
+        const res = await fetch('/api/device/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ mac_address: mac, device_key: key })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          window.location.href = data.redirect || 'device_playlists.html';
+        } else {
+          showAlert(alertBox, data.error || 'Invalid MAC Address or Device Key');
+        }
+      } catch (err) {
+        showAlert(alertBox, 'Connection failed. Please check your network connection.');
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+        if (submitText) submitText.innerHTML = 'LOGIN';
+      }
+    }
+
+    function showAlert(el, msg) {
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function hideAlert(el) {
+      if (!el) return;
+      el.textContent = '';
+      el.classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
+
