@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,16 +10,16 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
 
-  <title>SADDAM IPTV - بوابة التحكم وإقران الأجهزة</title>
-  <meta name="description" content="البوابة الرسمية لتطبيق SADDAM IPTV لإدارة أجهزة البث وإضافة مصادر M3U و Xtream Codes مباشرة.">
+  <title>SADDAM IPTV - Device Management Portal</title>
+  <meta name="description" content="Official SADDAM IPTV Portal for player device pairing, key generation, and streaming management.">
   <link rel="icon" type="image/png" href="logo.png">
 
-  <!-- Google Fonts: Cairo & Outfit -->
+  <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
 
-  <!-- FontAwesome 6 Icons -->
+  <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
   <!-- Design System -->
@@ -30,7 +30,7 @@
   <!-- ================= Site Header ================= -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="index.html" class="brand-link" id="brandHomeLink">
+      <a href="index.html" class="brand-link" id="brandLink">
         <img src="logo.png" alt="SADDAM IPTV Logo" class="brand-logo-img">
         <div class="brand-title">
           <span>SADDAM</span>
@@ -40,431 +40,358 @@
       </a>
 
       <div class="header-actions">
-        <!-- Logged-in Admin Pill (Shown when authenticated) -->
-        <div id="adminUserBadge" class="admin-slot-pill hidden">
+        <!-- Logged-in Admin Badge (Visible when authenticated) -->
+        <div id="userBadge" class="user-badge hidden">
           <i class="fa-solid fa-user-shield" style="color: var(--primary);"></i>
-          <span id="adminUserText" style="font-weight: 700;">مشرف</span>
+          <span id="userNameText">Admin</span>
         </div>
 
-        <!-- Device Info Badge (Shown only when device is paired) -->
-        <div id="headerDeviceBadge" class="admin-slot-pill hidden">
-          <i class="fa-solid fa-tv" style="color: var(--success);"></i>
-          <span id="deviceMacMasked" class="latin-code" style="font-weight: 700; color: #fff;"></span>
-        </div>
-
-        <!-- Back to Portal Home Button (Shown when in pairing or device dashboard) -->
-        <button id="btnHeaderPortal" class="btn btn-secondary btn-sm hidden" title="العودة إلى البوابة الرئيسية">
+        <!-- Back to Home Button (Visible in sub-views) -->
+        <button id="btnHeaderHome" class="btn btn-secondary btn-sm hidden" type="button" title="Back to Portal Home">
           <i class="fa-solid fa-house"></i>
-          <span>الرئيسية</span>
+          <span>Home</span>
         </button>
 
-        <!-- Playlists Dashboard Button (Shown when authenticated) -->
-        <button id="btnHeaderPlaylists" class="btn btn-secondary btn-sm hidden" title="عرض وإدارة قوائم التشغيل">
-          <i class="fa-solid fa-satellite-dish"></i>
-          <span>قوائم التشغيل</span>
-        </button>
-
-        <!-- Admin Panel Button (Shown when authenticated) -->
-        <a href="admin.html" id="btnAdminAccess" class="btn btn-primary btn-sm hidden" title="الانتقال إلى لوحة الإدارة">
-          <i class="fa-solid fa-chart-pie"></i>
-          <span>لوحة الإدارة</span>
+        <!-- Admin Page Quick Link (Visible when authenticated) -->
+        <a href="admin.html" id="btnHeaderAdmin" class="btn btn-secondary btn-sm hidden" title="Go to Admin Dashboard">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>Admin Page</span>
         </a>
 
-        <!-- Logout Button (Shown when authenticated) -->
-        <button id="btnLogout" class="btn btn-danger btn-sm hidden" title="إنهاء الجلسة وتسجيل الخروج">
-          <i class="fa-solid fa-power-off"></i>
-          <span>خروج</span>
+        <!-- Sign Out Button (Visible when authenticated) -->
+        <button id="btnHeaderLogout" class="btn btn-danger btn-sm hidden" type="button" title="Sign out of portal">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+          <span>Sign Out</span>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- ================= Main Content Area ================= -->
-  <main style="flex: 1; padding: 24px 0;">
+  <!-- ================= Main Content Container ================= -->
+  <main style="flex: 1;">
     <div class="container">
 
-      <!-- ====================================================================
-           VIEW 1: PRIMARY LOGIN SCREEN (Gated Entry - SPD Section 2)
-           Shown immediately on visiting site without an active session
-           ==================================================================== -->
-      <section id="loginSection" class="auth-wrapper">
+      <!-- ================================================================
+           VIEW 1: LOGIN VIEW (Gated Entry - Specification Section 3.1 & 3.2)
+           Shown immediately for unauthenticated visitors
+           ================================================================ -->
+      <section id="loginView" class="auth-wrapper">
         <div class="auth-card">
           <div class="auth-header">
-            <img src="logo.png" alt="SADDAM IPTV Logo" class="auth-logo">
-            <h1 class="auth-title">تسجيل الدخول إلى <span class="gradient-text">البوابة</span></h1>
-            <p class="auth-subtitle">
-              يرجى تسجيل الدخول بحساب المشرف للوصول إلى بوابة إقران الأجهزة ولوحة الإدارة
-            </p>
+            <img src="logo.png" alt="SADDAM IPTV" class="auth-logo">
+            <h1 class="auth-title">Sign In to <span class="gradient-text">Portal</span></h1>
+            <p class="auth-subtitle">Enter your administrator credentials to access device pairing and management.</p>
           </div>
 
           <!-- Alert Container -->
-          <div id="loginAlert" class="alert-box hidden"></div>
+          <div id="loginAlert" class="alert-box alert-danger hidden"></div>
 
-          <!-- Main Login Form (Username + Password only) -->
-          <form id="mainLoginForm">
+          <!-- Login Form -->
+          <form id="loginForm" novalidate>
             <div class="form-group">
-              <label class="form-label" for="loginUsername">اسم المستخدم</label>
+              <label class="form-label" for="loginUsername">Username <span class="required">*</span></label>
               <div class="input-wrapper">
-                <input 
-                  type="text" 
-                  id="loginUsername" 
-                  class="form-input" 
-                  placeholder="أدخل اسم المستخدم" 
-                  autocomplete="username" 
-                  required
-                >
+                <input type="text" id="loginUsername" class="form-input" placeholder="Enter username" autocomplete="username" required>
               </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="loginPassword">كلمة المرور</label>
+              <label class="form-label" for="loginPassword">Password <span class="required">*</span></label>
               <div class="input-wrapper">
-                <input 
-                  type="password" 
-                  id="loginPassword" 
-                  class="form-input" 
-                  placeholder="أدخل كلمة المرور" 
-                  autocomplete="current-password" 
-                  required
-                >
-                <button type="button" id="toggleLoginPassword" class="password-toggle-btn" title="إظهار / إخفاء كلمة المرور">
-                  <i class="fa-solid fa-eye" id="loginPasswordEye"></i>
+                <input type="password" id="loginPassword" class="form-input" placeholder="Enter password" autocomplete="current-password" required>
+                <button type="button" id="togglePasswordBtn" class="password-toggle-btn" title="Toggle password visibility">
+                  <i class="fa-solid fa-eye" id="togglePasswordIcon"></i>
                 </button>
               </div>
             </div>
 
             <button type="submit" id="btnLoginSubmit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
-              <span id="btnLoginText">تسجيل الدخول</span>
-              <i class="fa-solid fa-arrow-left"></i>
+              <i class="fa-solid fa-arrow-right-to-bracket"></i>
+              <span id="loginBtnText">Sign In</span>
             </button>
           </form>
+
+          <div class="auth-footer">
+            <i class="fa-solid fa-lock" style="color: var(--primary); margin-right: 4px;"></i>
+            Authorized Administrator Access Only
+          </div>
         </div>
       </section>
 
-      <!-- ====================================================================
-           VIEW 2: PORTAL HOME (After Successful Login - SPD Section 3)
-           Offers two clear options: Pair Device OR Admin Panel
-           ==================================================================== -->
-      <section id="portalSection" class="portal-wrapper hidden">
-        <div class="portal-welcome-card">
-          <h2 style="font-size: 1.6rem; color: #fff; margin-bottom: 8px;">
-            مرحباً بك في بوابة <span class="gradient-text">SADDAM IPTV</span>
-          </h2>
-          <p style="color: var(--text-muted); font-size: 0.95rem;">
-            جلسة الدخول نشطة ومؤمنة. اختر الإجراء المطلوب للمتابعة:
-          </p>
+      <!-- ================================================================
+           VIEW 2: HOME VIEW (Specification Section 3.3)
+           Post-login home page featuring exactly TWO primary actions
+           ================================================================ -->
+      <section id="homeView" class="home-wrapper hidden">
+        <div class="home-banner">
+          <h1>Welcome, <span id="welcomeUserName" class="gradient-text">Admin</span></h1>
+          <p>Choose an action below to pair player devices or access system management.</p>
         </div>
 
-        <div class="portal-grid">
-          <!-- Button 1: Pair Device (إقران جهاز) -->
-          <div class="portal-card" id="cardPairDevice">
+        <div class="two-actions-grid">
+          <!-- Action 1: Pair Devices -->
+          <div class="action-card">
             <div>
-              <div class="portal-card-icon blue">
+              <div class="action-card-icon">
                 <i class="fa-solid fa-tv"></i>
               </div>
-              <h3 class="portal-card-title">إقران جهاز المشترك</h3>
-              <p class="portal-card-desc">
-                إدخال كود <strong>MAC Address</strong> و <strong>Device Key</strong> الخاص بجهاز محدد لربطه بحسابك وتفعيل وصوله إلى قوائم البث.
-              </p>
+              <div class="action-card-content">
+                <h2>Pair Devices</h2>
+                <p>Register new IPTV player devices using their MAC address, generate secure 6-digit Device KEYs, and view registered hardware.</p>
+              </div>
             </div>
-            <button type="button" class="btn btn-primary" id="btnOpenPairingView" style="width: 100%;">
-              <i class="fa-solid fa-link"></i>
-              <span>إقران جهاز (Pair Device)</span>
+            <button type="button" id="btnOpenPairDevices" class="btn btn-primary btn-lg" style="width: 100%;">
+              <span>Pair Devices</span>
+              <i class="fa-solid fa-arrow-right"></i>
             </button>
           </div>
 
-          <!-- Button 2: Manage Playlists (إدارة قوائم التشغيل) -->
-          <div class="portal-card" id="cardPlaylists">
+          <!-- Action 2: Admin Page -->
+          <div class="action-card">
             <div>
-              <div class="portal-card-icon green">
-                <i class="fa-solid fa-satellite-dish"></i>
+              <div class="action-card-icon admin">
+                <i class="fa-solid fa-shield-halved"></i>
               </div>
-              <h3 class="portal-card-title">إدارة قوائم التشغيل</h3>
-              <p class="portal-card-desc">
-                عرض وإدارة قوائم التشغيل المحفوظة بحسابك بشكل دائم حتى انتهاء صلاحيتها وتوفيرها لجميع أجهزتك المقترنة.
-              </p>
+              <div class="action-card-content">
+                <h2>Admin Page</h2>
+                <p>Manage M3U & Xtream playlists, oversee registered devices, inspect security audit logs, and configure administrator accounts.</p>
+              </div>
             </div>
-            <button type="button" class="btn btn-secondary" id="btnOpenPlaylistsView" style="width: 100%;">
-              <i class="fa-solid fa-list-check"></i>
-              <span>عرض قوائم التشغيل</span>
-            </button>
+            <a href="admin.html" id="btnOpenAdminPage" class="btn btn-secondary btn-lg" style="width: 100%;">
+              <span>Admin Page</span>
+              <i class="fa-solid fa-arrow-right"></i>
+            </a>
           </div>
-
-          <!-- Button 3: Admin Panel (لوحة الإدارة) -->
-          <a href="admin.html" class="portal-card" id="cardAdminPanel">
-            <div>
-              <div class="portal-card-icon purple">
-                <i class="fa-solid fa-user-shield"></i>
-              </div>
-              <h3 class="portal-card-title">لوحة الإدارة الشاملة</h3>
-              <p class="portal-card-desc">
-                إدارة كاملة لكافة أجهزة المشتركين، قوائم التشغيل، نشاط الأجهزة، المزامنة، وسجل العمليات الأمني وإعدادات النظام.
-              </p>
-            </div>
-            <div class="btn btn-secondary" style="width: 100%; text-align: center;">
-              <i class="fa-solid fa-chart-pie"></i>
-              <span>لوحة الإدارة (Admin Panel)</span>
-            </div>
-          </a>
         </div>
       </section>
 
-      <!-- ====================================================================
-           VIEW 3: DEVICE PAIRING SCREEN (SPD Section 3.1 & 5)
-           Requires valid MAC Address + Device Key (PIN)
-           ==================================================================== -->
-      <section id="pairingSection" class="auth-wrapper hidden">
-        <div class="auth-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <button type="button" id="btnBackToPortalFromPairing" class="btn btn-secondary btn-sm">
-              <i class="fa-solid fa-arrow-right"></i>
-              <span>العودة للبوابة</span>
-            </button>
-            <span class="badge badge-blue">إقران جهاز</span>
+      <!-- ================================================================
+           VIEW 3: PAIR DEVICES VIEW (Specification Section 3.4)
+           Dedicated workflow for pairing devices and listing registered devices
+           ================================================================ -->
+      <section id="pairDevicesView" class="pair-section-wrapper hidden">
+        <div class="section-top-nav">
+          <div>
+            <h2>Device Pairing & Registration</h2>
+            <p>Register an IPTV player using its MAC address. A unique 6-digit Device KEY will be generated.</p>
           </div>
+          <button type="button" id="btnBackHome" class="btn btn-secondary btn-sm">
+            <i class="fa-solid fa-arrow-left"></i>
+            <span>Back to Home</span>
+          </button>
+        </div>
 
-          <div class="auth-header">
-            <h1 class="auth-title">إقران <span class="gradient-text">جهاز المشترك</span></h1>
-            <p class="auth-subtitle">
-              أدخل رمز <strong>MAC</strong> ومفتاح الجهاز <strong>Device Key (PIN)</strong> الظاهرين في تطبيق SADDAM IPTV على شاشة المشترك.
-            </p>
-          </div>
-
-          <!-- Alert Container -->
-          <div id="pairingAlert" class="alert-box hidden"></div>
-
-          <!-- Direct Pairing Form -->
-          <form id="pairingForm">
-            <div class="form-group">
-              <label class="form-label" for="macInput">
-                <span>رمز الجهاز (MAC Code)</span>
-                <span class="form-label-hint open-help-modal">أين أجد الرمز؟</span>
-              </label>
-              <div class="input-wrapper">
-                <input 
-                  type="text" 
-                  id="macInput" 
-                  class="form-input code-style" 
-                  placeholder="AA:BB:CC:11:22:33" 
-                  maxlength="17" 
-                  autocomplete="off" 
-                  spellcheck="false" 
-                  required
-                >
-              </div>
+        <div class="pair-layout">
+          <!-- Left Column: Registration Form -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-plus-circle" style="color: var(--primary);"></i>
+                <span>Register Device</span>
+              </h3>
             </div>
 
-            <div class="form-group">
-              <label class="form-label" for="pinInput">
-                <span>مفتاح الجهاز / PIN (6 أرقام)</span>
-              </label>
-              <div class="input-wrapper">
-                <input 
-                  type="password" 
-                  id="pinInput" 
-                  class="form-input code-style" 
-                  placeholder="••••••" 
-                  maxlength="6" 
-                  pattern="[0-9]{6}" 
-                  inputmode="numeric" 
-                  autocomplete="off" 
-                  required
-                >
-                <button type="button" id="togglePinVisibility" class="password-toggle-btn" title="إظهار / إخفاء الرمز">
-                  <i class="fa-solid fa-eye" id="pinEyeIcon"></i>
+            <!-- Form Alert -->
+            <div id="pairAlert" class="alert-box alert-danger hidden"></div>
+
+            <form id="pairDeviceForm" novalidate>
+              <div class="form-group">
+                <label class="form-label" for="macAddressInput">
+                  MAC Address <span class="required">*</span>
+                </label>
+                <div class="input-wrapper">
+                  <input type="text" id="macAddressInput" class="form-input code-font" placeholder="00:1A:79:AB:CD:EF" maxlength="17" autocomplete="off" required>
+                </div>
+                <span class="form-hint">6-octet hexadecimal format (e.g. 00:1A:79:AB:CD:EF).</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="deviceLabelInput">Device Name / Label</label>
+                <input type="text" id="deviceLabelInput" class="form-input" placeholder="e.g. Living Room TV, Bedroom Box" maxlength="60">
+                <span class="form-hint">Optional friendly name to identify this device.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="deviceNotesInput">Notes</label>
+                <textarea id="deviceNotesInput" class="form-textarea" rows="2" placeholder="Optional notes (location, user, notes)" maxlength="200"></textarea>
+              </div>
+
+              <button type="submit" id="btnPairSubmit" class="btn btn-primary" style="width: 100%;">
+                <i class="fa-solid fa-link"></i>
+                <span id="pairSubmitText">Pair Device</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Right Column: Registered Devices List -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-list-check" style="color: var(--primary);"></i>
+                <span>Registered Devices</span>
+                <span id="deviceCountBadge" class="badge badge-dim">0</span>
+              </h3>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="deviceSearchInput" class="form-input" placeholder="Search by MAC or name..." style="padding: 6px 12px; font-size: 0.82rem; width: 220px;">
+                <button type="button" id="btnRefreshDevices" class="btn btn-secondary btn-sm" title="Refresh device list">
+                  <i class="fa-solid fa-rotate-right"></i>
                 </button>
               </div>
             </div>
 
-            <button type="submit" id="btnPair" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
-              <span id="btnPairText">التحقق وإقران الجهاز</span>
-              <i class="fa-solid fa-arrow-left"></i>
-            </button>
-          </form>
-        </div>
-      </section>
-
-      <!-- ====================================================================
-           VIEW 4: PAIRED DEVICE DASHBOARD (Manage Playlists for This Device)
-           ==================================================================== -->
-      <section id="dashboardSection" class="hidden">
-        
-        <!-- Device Quick Info Card -->
-        <div class="content-card">
-          <div class="flex-between">
-            <div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <h2 id="deviceLabel" style="font-size: 1.2rem; color: #fff; margin-bottom: 4px;">جهاز التلفاز</h2>
-                <span class="badge badge-green"><i class="fa-solid fa-circle-check"></i> متصل بنجاح</span>
-              </div>
-              <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px;">
-                <span>MAC: <strong id="deviceMacFull" class="latin-code" style="color: #fff;">-</strong></span>
-                <span>المنصة: <strong id="devicePlatform">-</strong></span>
-                <span>المزامنة: <strong id="deviceSyncVersion" class="latin-code" style="color: var(--primary);">v1</strong></span>
-              </div>
-            </div>
-
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <button id="btnBackToPortalFromDash" class="btn btn-secondary btn-sm" title="العودة للبوابة الرئيسية">
-                <i class="fa-solid fa-house"></i>
-                <span>البوابة الرئيسية</span>
-              </button>
-              <button id="btnPairNewFromDash" class="btn btn-secondary btn-sm" title="إقران جهاز إضافي بحسابك">
-                <i class="fa-solid fa-plus-circle"></i>
-                <span>إقران جهاز آخر</span>
-              </button>
-              <a href="admin.html" class="btn btn-secondary btn-sm" title="لوحة الإدارة">
-                <i class="fa-solid fa-chart-pie"></i>
-                <span>لوحة الإدارة</span>
-              </a>
-              <button id="btnOpenAddSource" class="btn btn-primary btn-sm">
-                <i class="fa-solid fa-plus"></i> إضافة قائمة جديدة
-              </button>
-              <button id="btnUnlink" class="btn btn-danger btn-sm" title="إلغاء ربط هذا الجهاز من هذه الجلسة">
-                <i class="fa-solid fa-link-slash"></i> إلغاء الربط
-              </button>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Device Name</th>
+                    <th>MAC Address</th>
+                    <th>Status</th>
+                    <th>Registered</th>
+                    <th>Last Seen</th>
+                    <th style="text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="devicesTableBody">
+                  <tr>
+                    <td colspan="6" class="empty-state">
+                      <i class="fa-solid fa-tv"></i>
+                      <p>Loading registered devices...</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-
-        <!-- Sources Overview Stats -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-info">
-              <h3>إجمالي القوائم</h3>
-              <div class="stat-number" id="statTotalSources">0</div>
-            </div>
-            <div class="stat-icon"><i class="fa-solid fa-list-check"></i></div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-info">
-              <h3>القوائم المفعلة</h3>
-              <div class="stat-number" id="statActiveSources" style="color: var(--success);">0</div>
-            </div>
-            <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-info">
-              <h3>القوائم الصالحة</h3>
-              <div class="stat-number" id="statWorkingSources" style="color: var(--primary);">0</div>
-            </div>
-            <div class="stat-icon purple"><i class="fa-solid fa-signal"></i></div>
-          </div>
-        </div>
-
-        <!-- Playlists List Card -->
-        <div class="content-card">
-          <div class="content-card-header">
-            <h2 class="card-title">
-              <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
-              <span>قوائم التشغيل التابعة للحساب (متاحة لجميع أجهزتك المقترنة)</span>
-            </h2>
-
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="sourceSearchInput" class="form-input" placeholder="بحث في القوائم..." style="width: 180px; min-height: 36px; padding: 6px 10px; font-size: 0.85rem;">
-              <select id="sourceFilterSelect" class="form-input" style="width: 120px; min-height: 36px; padding: 6px 8px; font-size: 0.85rem;">
-                <option value="all">الكل</option>
-                <option value="active">المفعلة</option>
-                <option value="disabled">المعطلة</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="sourcesContainer">
-            <!-- Populated dynamically -->
-          </div>
-        </div>
-
       </section>
 
     </div>
   </main>
 
-  <!-- Help Modal -->
-  <div id="modalHelp" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 480px;">
-      <div class="modal-header">
-        <h3 class="card-title">أين أجد كود MAC ومفتاح الجهاز PIN؟</h3>
-        <button class="modal-close-btn" id="closeHelpModal"><i class="fa-solid fa-xmark"></i></button>
-      </div>
-      <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-muted);">
-        1. افتح تطبيق <strong>SADDAM IPTV</strong> على جهاز المشترك.<br>
-        2. ستظهر لك شاشة الإقران أو شاشة الإعدادات.<br>
-        3. يظهر كود الـ <strong>MAC Address</strong> و <strong>Device Key</strong> بوضوح في أسفل الشاشة.<br>
-        4. أدخل الرمزين في واجهة الإقران لربط الجهاز وإضافة القوائم له حصراً.
-      </p>
+  <!-- ================= Footer ================= -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>SADDAM IPTV Management Portal &copy; 2026. All rights reserved.</p>
     </div>
-  </div>
+  </footer>
 
-  <!-- Add / Edit Source Modal -->
-  <div id="modalSource" class="modal-overlay hidden">
-    <div class="modal-card">
+  <!-- ================= MODAL: Device Paired Successfully ================= -->
+  <div id="pairSuccessModal" class="modal-overlay">
+    <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="card-title" id="sourceModalTitle">إضافة قائمة جديدة</h3>
-        <button class="modal-close-btn" id="closeSourceModal"><i class="fa-solid fa-xmark"></i></button>
+        <h3 class="modal-title" style="color: var(--success); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-circle-check"></i>
+          <span>Device Paired Successfully</span>
+        </h3>
+        <button type="button" class="modal-close-btn" id="btnClosePairSuccessModal">&times;</button>
       </div>
-
-      <div id="modalSourceAlert" class="alert-box hidden"></div>
-
-      <form id="sourceForm">
-        <!-- Tabs for M3U vs Xtream -->
-        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <button type="button" id="tabOptionM3u" class="btn btn-secondary btn-sm" style="flex: 1; border-color: var(--primary);">قائمة M3U / M3U8</button>
-          <button type="button" id="tabOptionXtream" class="btn btn-secondary btn-sm" style="flex: 1;">خادم Xtream Codes</button>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="sourceNameInput">اسم القائمة</label>
-          <input type="text" id="sourceNameInput" class="form-input" placeholder="مثال: قنوات الرياضة والأفلام" required>
-        </div>
-
-        <!-- M3U Fields -->
-        <div id="m3uFields">
-          <div class="form-group">
-            <label class="form-label" for="sourceUrlInput">رابط قائمة M3U / M3U8</label>
-            <input type="url" id="sourceUrlInput" class="form-input latin-code" placeholder="https://example.com/playlist.m3u">
+      <div class="modal-body">
+        <div style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
+            <span style="color: var(--text-dim);">Device Name:</span>
+            <strong id="modalSuccessDeviceName">-</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
+            <span style="color: var(--text-dim);">MAC Address:</span>
+            <span id="modalSuccessMac" class="code-font" style="font-weight: 700;">-</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+            <span style="color: var(--text-dim);">Status:</span>
+            <span class="badge badge-success">Active</span>
           </div>
         </div>
 
-        <!-- Xtream Fields -->
-        <div id="xtreamFields" class="hidden">
-          <div class="form-group">
-            <label class="form-label" for="xtreamServerInput">عنوان السيرفر (Server URL)</label>
-            <input type="url" id="xtreamServerInput" class="form-input latin-code" placeholder="http://example.com:8080">
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div class="form-group">
-              <label class="form-label" for="xtreamUserInput">اسم المستخدم</label>
-              <input type="text" id="xtreamUserInput" class="form-input latin-code" placeholder="Username">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="xtreamPassInput">كلمة المرور</label>
-              <input type="password" id="xtreamPassInput" class="form-input latin-code" placeholder="Password">
-            </div>
-          </div>
-        </div>
-
-        <!-- Optional Expiration Date Field -->
-        <div class="form-group" style="margin-top: 10px;">
-          <label class="form-label" for="sourceExpiresAtInput">
-            <span>تاريخ انتهاء الصلاحية (اختياري)</span>
-            <span class="form-label-hint">تظل القائمة محفوظة وتعمل حتى هذا التاريخ</span>
-          </label>
-          <input type="date" id="sourceExpiresAtInput" class="form-input latin-code">
-        </div>
-
-        <div style="display: flex; gap: 10px; margin-top: 16px;">
-          <button type="submit" id="btnSaveSource" class="btn btn-primary" style="flex: 1;">
-            <span>حفظ القائمة</span>
+        <!-- 6-digit Device KEY Display -->
+        <div class="key-display-card">
+          <div class="key-display-title">Device KEY</div>
+          <div id="modalSuccessDeviceKey" class="key-display-digits">------</div>
+          <button type="button" id="btnCopyDeviceKey" class="btn btn-secondary btn-sm">
+            <i class="fa-regular fa-copy"></i>
+            <span id="btnCopyText">Copy Device KEY</span>
           </button>
-          <button type="button" class="btn btn-secondary" id="cancelSourceModalBtn">إلغاء</button>
         </div>
-      </form>
+
+        <div class="alert-box alert-warning" style="margin-top: 14px;">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Enter this 6-digit Device KEY on your IPTV player application. For security, this key is only displayed once and cannot be retrieved later.</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnDonePairSuccess" class="btn btn-primary">Done</button>
+      </div>
     </div>
   </div>
 
+  <!-- ================= MODAL: Reset Key Confirmation & Success ================= -->
+  <div id="resetKeyModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-key" style="color: var(--warning);"></i>
+          <span id="resetKeyModalTitle">Reset Device KEY</span>
+        </h3>
+        <button type="button" class="modal-close-btn" id="btnCloseResetKeyModal">&times;</button>
+      </div>
+      <div class="modal-body" id="resetKeyModalBody">
+        <!-- Step 1: Confirmation prompt -->
+        <div id="resetKeyConfirmView">
+          <p style="margin-bottom: 14px;">Are you sure you want to reset the Device KEY for <strong id="resetTargetDeviceName">-</strong> (<span id="resetTargetMac" class="code-font"></span>)?</p>
+          <div class="alert-box alert-warning">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>This will revoke all active sessions for this device and generate a new 6-digit Device KEY.</span>
+          </div>
+        </div>
+
+        <!-- Step 2: New Key Result -->
+        <div id="resetKeyResultView" class="hidden">
+          <div class="alert-box alert-success">
+            <i class="fa-solid fa-circle-check"></i>
+            <span>Device KEY has been reset successfully.</span>
+          </div>
+          <div class="key-display-card">
+            <div class="key-display-title">New Device KEY</div>
+            <div id="modalNewDeviceKey" class="key-display-digits">------</div>
+            <button type="button" id="btnCopyNewDeviceKey" class="btn btn-secondary btn-sm">
+              <i class="fa-regular fa-copy"></i>
+              <span id="btnCopyNewKeyText">Copy Device KEY</span>
+            </button>
+          </div>
+          <p class="form-hint text-center">Please enter this new key on the player device.</p>
+        </div>
+      </div>
+      <div class="modal-footer" id="resetKeyModalFooter">
+        <button type="button" id="btnCancelResetKey" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnConfirmResetKey" class="btn btn-primary">Confirm Reset</button>
+        <button type="button" id="btnCloseResetResult" class="btn btn-primary hidden">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: Unpair Device Confirmation ================= -->
+  <div id="unpairModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" style="color: var(--danger); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Confirm Unpair Device</span>
+        </h3>
+        <button type="button" class="modal-close-btn" id="btnCloseUnpairModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 14px;">Are you sure you want to unpair <strong id="unpairTargetDeviceName">-</strong> (<span id="unpairTargetMac" class="code-font"></span>)?</p>
+        <div class="alert-box alert-info">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span><strong>Playlists are preserved:</strong> Playlists belong to your account and will NOT be deleted or altered by unpairing this device.</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelUnpair" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnConfirmUnpair" class="btn btn-danger">Unpair Device</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
   <script src="app.js"></script>
 </body>
 </html>

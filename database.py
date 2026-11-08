@@ -14,7 +14,7 @@ import json
 import time
 import os
 import urllib.parse
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from security import (
     hash_pin, verify_pin, hash_token, normalize_mac, generate_session_token,
     hash_password, verify_password
@@ -84,11 +84,12 @@ def init_db():
         except Exception:
             pass
 
-        # 4. IPTV Sources Table
+        # 4. IPTV Sources Table (Playlists belong to account, device_id is nullable, no cascade delete)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS iptv_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER NOT NULL,
+                device_id INTEGER,
+                account_slot INTEGER DEFAULT 1,
                 name TEXT NOT NULL,
                 source_type TEXT NOT NULL, -- m3u, m3u8, xtream
                 server_url TEXT NOT NULL,
@@ -99,9 +100,9 @@ def init_db():
                 enabled INTEGER DEFAULT 1,
                 last_tested_at INTEGER,
                 last_error_code TEXT,
+                expires_at TEXT,
                 created_at INTEGER,
-                updated_at INTEGER,
-                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+                updated_at INTEGER
             )
         """)
         try:
@@ -110,6 +111,42 @@ def init_db():
             pass
         try:
             cursor.execute("ALTER TABLE iptv_sources ADD COLUMN account_slot INTEGER DEFAULT 1")
+        except Exception:
+            pass
+        try:
+            # Verify if existing table has device_id NOT NULL and migrate if necessary
+            cursor.execute("PRAGMA table_info(iptv_sources)")
+            cols = cursor.fetchall()
+            dev_col = next((c for c in cols if c[1] == 'device_id'), None)
+            if dev_col and dev_col[3] == 1:
+                cursor.execute("PRAGMA foreign_keys=OFF")
+                cursor.execute("""
+                    CREATE TABLE iptv_sources_mig (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        device_id INTEGER,
+                        account_slot INTEGER DEFAULT 1,
+                        name TEXT NOT NULL,
+                        source_type TEXT NOT NULL,
+                        server_url TEXT NOT NULL,
+                        username TEXT,
+                        password_encrypted TEXT,
+                        description TEXT,
+                        status TEXT DEFAULT 'untested',
+                        enabled INTEGER DEFAULT 1,
+                        last_tested_at INTEGER,
+                        last_error_code TEXT,
+                        expires_at TEXT,
+                        created_at INTEGER,
+                        updated_at INTEGER
+                    )
+                """)
+                cursor.execute("""
+                    INSERT INTO iptv_sources_mig SELECT id, device_id, account_slot, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, last_error_code, expires_at, created_at, updated_at FROM iptv_sources
+                """)
+                cursor.execute("DROP TABLE iptv_sources")
+                cursor.execute("ALTER TABLE iptv_sources_mig RENAME TO iptv_sources")
+                cursor.execute("PRAGMA foreign_keys=ON")
+                conn.commit()
         except Exception:
             pass
         try:
@@ -299,7 +336,7 @@ def seed_initial_data():
             cursor.execute("""
                 INSERT INTO devices (device_code, device_code_hash, device_label, platform, app_version, status, sync_version, last_seen_at, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (demo_mac, hash_token(demo_mac), "جهاز الصالون - Android TV 4K", "Android TV (v11)", "2.4.0", "active", 1, now, now, now))
+            """, (demo_mac, hash_token(demo_mac), "Living Room TV - Android TV 4K", "Android TV (v11)", "2.4.0", "active", 1, now, now, now))
             device_id = cursor.lastrowid
 
             # Create pairing PIN: 123456 valid for 30 days for demo/testing
@@ -313,16 +350,16 @@ def seed_initial_data():
             cursor.execute("""
                 INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (device_id, "باقة القنوات الرياضية والإخبارية المفتوحة (M3U)", "m3u",
+            """, (device_id, "Sports & News Live Channels (M3U)", "m3u",
                   "https://iptv-org.github.io/iptv/categories/news.m3u", "", "",
-                  "قائمة قنوات إخبارية ورياضية عالمية مجانية بصيغة M3U", "working", 1, now, now, now))
+                  "Free global news and sports streaming playlist (M3U)", "working", 1, now, now, now))
 
             cursor.execute("""
                 INSERT INTO iptv_sources (device_id, name, source_type, server_url, username, password_encrypted, description, status, enabled, last_tested_at, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (device_id, "خادم SADDAM Xtream Demo API", "xtream",
+            """, (device_id, "SADDAM Xtream Demo API", "xtream",
                   "http://xtream.saddamiptv.stream:8080", "saddam_vip", "********",
-                  "باقة القنوات والمسلسلات عبر بروتوكول Xtream Codes", "working", 1, now, now, now))
+                  "Channels and series via Xtream Codes protocol", "working", 1, now, now, now))
 
             conn.commit()
             log_audit("system", "0", "seed_demo_device", "device", str(device_id), {"mac": demo_mac})
@@ -367,7 +404,7 @@ def create_or_rotate_pin(device_id: int, expiry_minutes: int = 52560000) -> str:
 
 
 def set_device_pin(device_id: int, pin: str, expiry_minutes: int = 52560000) -> str:
-    """Sets the permanent pairing PIN for a device (never expires)."""
+    """Sets the permanent pairing PIN for a device (never expires) and revokes previous keys."""
     pin_str = str(pin).strip()
     pin_h = hash_pin(pin_str)
     now = int(time.time())
@@ -375,18 +412,56 @@ def set_device_pin(device_id: int, pin: str, expiry_minutes: int = 52560000) -> 
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM device_pairing_codes WHERE device_id = ? AND pin_hash = ?", (device_id, pin_h))
-        existing = cursor.fetchone()
-        if not existing:
-            cursor.execute("""
-                INSERT INTO device_pairing_codes (device_id, pin_hash, expires_at, attempt_count, consumed_at, created_at)
-                VALUES (?, ?, ?, 0, NULL, ?)
-            """, (device_id, pin_h, expires_at, now))
-        else:
-            cursor.execute("UPDATE device_pairing_codes SET expires_at = ?, consumed_at = NULL WHERE id = ?", (expires_at, existing['id']))
+        cursor.execute("DELETE FROM device_pairing_codes WHERE device_id = ?", (device_id,))
+        cursor.execute("""
+            INSERT INTO device_pairing_codes (device_id, pin_hash, expires_at, attempt_count, consumed_at, created_at)
+            VALUES (?, ?, ?, 0, NULL, ?)
+        """, (device_id, pin_h, expires_at, now))
         conn.commit()
 
     return pin_str
+
+
+def pair_device_from_web(mac: str, label: str = "Player Device", account_slot: int = 1, pin: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+    """
+    Registers or pairs a device from the website, generates a unique 6-digit numeric Device KEY,
+    stores its hash, links to account_slot, and returns (device_dict, raw_6_digit_key).
+    Crucial: Never alters or deletes any playlists in the account.
+    """
+    clean_mac = normalize_mac(mac)
+    now = int(time.time())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM devices WHERE device_code = ?", (clean_mac,))
+        row = cursor.fetchone()
+
+        if row:
+            dev_id = row['id']
+            cursor.execute("""
+                UPDATE devices 
+                SET device_label = ?, status = 'active', account_slot = ?, updated_at = ?
+                WHERE id = ?
+            """, (label.strip() if label else row['device_label'], account_slot, now, dev_id))
+        else:
+            cursor.execute("""
+                INSERT INTO devices (device_code, device_code_hash, device_label, platform, app_version, status, sync_version, account_slot, last_seen_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'Player', '1.0.0', 'active', 1, ?, ?, ?, ?)
+            """, (clean_mac, hash_token(clean_mac), label.strip() or 'Player Device', account_slot, now, now, now))
+            dev_id = cursor.lastrowid
+        conn.commit()
+
+    from security import generate_device_pin
+    raw_key = str(pin).strip() if pin and len(str(pin).strip()) == 6 and str(pin).strip().isdigit() else generate_device_pin()
+    set_device_pin(dev_id, raw_key)
+    create_device_session(dev_id)
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM devices WHERE id = ?", (dev_id,))
+        dev_row = dict(cursor.fetchone())
+
+    log_audit("admin", str(account_slot), "device_paired", "device", str(dev_id), {"mac": clean_mac, "label": label})
+    return dev_row, raw_key
 
 
 def verify_device_credentials(mac: str, pin: str) -> Optional[Dict[str, Any]]:
@@ -407,8 +482,6 @@ def verify_device_credentials(mac: str, pin: str) -> Optional[Dict[str, Any]]:
             return None
 
         device_dict = dict(device)
-        if device_dict.get('status') == 'blocked':
-            return None
 
         # Look for valid pairing code for this device (order by latest first)
         cursor.execute("""
@@ -425,8 +498,8 @@ def verify_device_credentials(mac: str, pin: str) -> Optional[Dict[str, Any]]:
         for code_row in codes:
             stored_hash = code_row['pin_hash']
             if verify_pin(pin, stored_hash):
-                # Ensure device status is active
-                cursor.execute("UPDATE devices SET status = 'active', updated_at = ? WHERE id = ?", (now, device_dict['id']))
+                # Update last seen timestamp without overriding blocked/disabled status
+                cursor.execute("UPDATE devices SET last_seen_at = ?, updated_at = ? WHERE id = ?", (now, now, device_dict['id']))
                 conn.commit()
                 return device_dict
 
@@ -495,6 +568,9 @@ def revoke_all_device_sessions(device_id: int):
     with get_db() as conn:
         conn.execute("UPDATE device_sessions SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL", (now, device_id))
         conn.commit()
+
+
+revoke_device_sessions = revoke_all_device_sessions
 
 
 def unlink_device(device_id: int):
@@ -955,7 +1031,7 @@ def clear_all_audit_logs() -> bool:
         except Exception:
             pass
         conn.commit()
-    log_audit("admin", "1", "audit_logs_cleared", "audit_logs", "", {"note": "سجل التدقيق تم حذفه بالكامل بواسطة المشرف"})
+    log_audit("admin", "1", "audit_logs_cleared", "audit_logs", "", {"note": "Audit log completely cleared by administrator"})
     return True
 
 

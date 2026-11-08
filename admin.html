@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
-
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,31 +10,27 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
 
-  <title>SADDAM IPTV - لوحة الإدارة الشاملة والأمان</title>
-  <meta name="description"
-    content="لوحة الإدارة الرسمية والشاملة لتطبيق SADDAM IPTV لإدارة أجهزة المشتركين وقوائم التشغيل وسجل العمليات">
+  <title>SADDAM IPTV - Administration Dashboard</title>
+  <meta name="description" content="Administration area for SADDAM IPTV device management, playlist control, and audit logs.">
   <link rel="icon" type="image/png" href="logo.png">
 
-  <!-- Google Fonts: Cairo & Outfit -->
+  <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Outfit:wght@500;600;700;800&display=swap"
-    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
 
-  <!-- FontAwesome 6 Icons -->
+  <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
   <!-- Design System -->
   <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
 
-  <!-- ================= Header ================= -->
+  <!-- ================= Site Header ================= -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="index.html" class="brand-link" id="brandHomeLink">
+      <a href="index.html" class="brand-link" id="brandLink">
         <img src="logo.png" alt="SADDAM IPTV Logo" class="brand-logo-img">
         <div class="brand-title">
           <span>SADDAM</span>
@@ -45,804 +40,492 @@
       </a>
 
       <div class="header-actions">
-        <!-- Return Action to Main Portal -->
-        <a href="index.html" id="btnBackToPairing" class="btn btn-secondary btn-sm" title="العودة إلى البوابة الرئيسية">
+        <!-- Back to Portal Home Button -->
+        <a href="index.html" id="btnBackPortal" class="btn btn-secondary btn-sm" title="Back to Portal Home">
           <i class="fa-solid fa-house"></i>
-          <span>العودة للبوابة</span>
+          <span>Portal Home</span>
         </a>
 
-        <!-- Logged-in Admin Pill (Visible when authenticated) -->
-        <div id="adminSlotBadge" class="admin-slot-pill hidden">
+        <!-- Admin User Badge -->
+        <div id="adminUserBadge" class="user-badge">
           <i class="fa-solid fa-user-shield" style="color: var(--primary);"></i>
-          <span id="adminSlotText" style="font-weight: 700;">مشرف</span>
+          <span id="adminUsernameText">Admin</span>
         </div>
 
-        <!-- Logout Button (Visible when authenticated) -->
-        <button id="btnAdminLogout" class="btn btn-danger btn-sm hidden" title="تسجيل الخروج وإنهاء الجلسة">
-          <i class="fa-solid fa-power-off"></i>
-          <span>خروج</span>
+        <!-- Sign Out Button -->
+        <button id="btnAdminLogout" class="btn btn-danger btn-sm" type="button" title="Sign out of administration">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+          <span>Sign Out</span>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- ================= View 1: Administrator Login Screen (Unauthenticated) ================= -->
-  <section id="loginView" class="auth-wrapper" style="flex: 1; padding: 40px 16px;">
-    <div class="auth-card" style="max-width: 440px; margin: 0 auto;">
-      <div class="auth-header">
-        <img src="logo.png" alt="SADDAM IPTV Logo" class="auth-logo">
-        <h1 class="auth-title">تسجيل دخول <span class="gradient-text">الإدارة</span></h1>
-        <p class="auth-subtitle">سجل الدخول بحساب المشرف للوصول إلى لوحة التحكم الشاملة</p>
-      </div>
+  <!-- ================= Main Administration Area ================= -->
+  <main style="flex: 1; padding: 28px 0 60px 0;">
+    <div class="container">
 
-      <!-- Alert Container -->
-      <div id="loginAlert" class="alert-box hidden"></div>
+      <!-- Global Alert Container -->
+      <div id="adminGlobalAlert" class="alert-box alert-danger hidden"></div>
 
-      <!-- Login Form (Username + Password only, NO MAC, NO Device Key) -->
-      <form id="unifiedLoginForm">
-        <div class="form-group">
-          <label class="form-label" for="usernameInput">اسم المستخدم</label>
-          <div class="input-wrapper">
-            <input type="text" id="usernameInput" class="form-input" placeholder="أدخل اسم المستخدم"
-              autocomplete="username" required>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="passwordInput">كلمة المرور</label>
-          <div class="input-wrapper">
-            <input type="password" id="passwordInput" class="form-input" placeholder="أدخل كلمة المرور"
-              autocomplete="current-password" required>
-            <button type="button" id="togglePasswordBtn" class="password-toggle-btn" title="إظهار / إخفاء كلمة المرور">
-              <i class="fa-solid fa-eye" id="togglePasswordIcon"></i>
-            </button>
-          </div>
-        </div>
-
-        <button type="submit" id="btnLoginSubmit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 10px;">
-          <span id="loginBtnText">الدخول إلى لوحة الإدارة</span>
-          <i class="fa-solid fa-arrow-left"></i>
-        </button>
-      </form>
-
-      <div class="auth-switch-mode" style="margin-top: 20px; text-align: center;">
-        <a href="index.html"
-          style="color: var(--text-dim); text-decoration: none; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-arrow-right"></i>
-          <span>العودة إلى صفحة ربط جهاز المشترك</span>
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= View 2: Complete Admin Dashboard (Authenticated) ================= -->
-  <div id="dashboardView" class="admin-layout hidden">
-
-    <!-- Sidebar Navigation -->
-    <aside class="admin-sidebar">
-      <div class="sidebar-menu">
-        <div class="sidebar-nav-item active" data-tab="overview">
-          <i class="fa-solid fa-chart-pie"></i>
-          <span>نظرة عامة</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="devices">
+      <!-- Navigation Tabs -->
+      <div class="tabs-nav">
+        <button type="button" class="tab-btn active" data-tab="tabDevices">
           <i class="fa-solid fa-tv"></i>
-          <span>الأجهزة والمشتركون</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="playlists">
+          <span>Devices Management</span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="tabPlaylists">
           <i class="fa-solid fa-satellite-dish"></i>
-          <span>قوائم التشغيل</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="activity">
-          <i class="fa-solid fa-wave-square"></i>
-          <span>نشاط الأجهزة</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="sync">
-          <i class="fa-solid fa-rotate"></i>
-          <span>المزامنة</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="audit">
-          <i class="fa-solid fa-shield-halved"></i>
-          <span>سجل العمليات</span>
-        </div>
-        <div class="sidebar-nav-item" data-tab="security">
-          <i class="fa-solid fa-user-lock"></i>
-          <span>إعدادات الأمان</span>
-        </div>
+          <span>Playlist Management</span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="tabAccounts">
+          <i class="fa-solid fa-user-shield"></i>
+          <span>Account & Access</span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="tabAudit">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          <span>Audit Activity Logs</span>
+        </button>
       </div>
 
-      <!-- Quick Session Info at Bottom of Sidebar -->
-      <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 12px;">
-        <div style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--text-muted);">
-          <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--success);"></div>
-          <span>جلسة إدارية نشطة</span>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="admin-main-content">
-
-      <!-- ================= Tab 1: Overview ================= -->
-      <section id="tabOverview" class="tab-pane">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-chart-pie" style="color: var(--primary);"></i> نظرة عامة وإحصائيات</h2>
-            <p>ملخص فوري عن حالة النظام، أجهزة المشتركين وقوائم التشغيل المرتبطة</p>
-          </div>
-          <button class="btn btn-secondary btn-sm" id="btnRefreshOverview" title="تحديث الإحصائيات">
-            <i class="fa-solid fa-rotate"></i>
-            <span>تحديث البيانات</span>
-          </button>
-        </div>
-
-        <!-- 4 Stats Cards -->
-        <div class="stats-grid">
-          <div class="stat-card" style="cursor: pointer;" onclick="switchTab('devices')">
-            <div class="stat-info">
-              <h3>إجمالي الأجهزة</h3>
-              <div class="stat-number" id="statTotalDevices">0</div>
+      <!-- ==============================================================
+           TAB 1: DEVICES MANAGEMENT (Specification Section 3.5 & 4)
+           ============================================================== -->
+      <div id="tabDevices" class="tab-pane active">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">
+                <i class="fa-solid fa-tv" style="color: var(--primary);"></i>
+                <span>Registered Devices</span>
+                <span id="devicesCountBadge" class="badge badge-dim">0</span>
+              </h2>
+              <p class="form-hint">View, inspect status, rotate keys, block/unblock, and unpair devices.</p>
             </div>
-            <div class="stat-icon purple"><i class="fa-solid fa-tv"></i></div>
-          </div>
-
-          <div class="stat-card" style="cursor: pointer;" onclick="switchTab('devices', 'active')">
-            <div class="stat-info">
-              <h3>الأجهزة النشطة</h3>
-              <div class="stat-number" id="statActiveDevices" style="color: var(--success);">0</div>
-            </div>
-            <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
-          </div>
-
-          <div class="stat-card" style="cursor: pointer;" onclick="switchTab('playlists')">
-            <div class="stat-info">
-              <h3>إجمالي قوائم التشغيل</h3>
-              <div class="stat-number" id="statTotalPlaylists" style="color: var(--primary);">0</div>
-            </div>
-            <div class="stat-icon"><i class="fa-solid fa-satellite-dish"></i></div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-info">
-              <h3>جلسات الأجهزة النشطة</h3>
-              <div class="stat-number" id="statActiveSessions" style="color: var(--warning);">0</div>
-            </div>
-            <div class="stat-icon orange"><i class="fa-solid fa-wifi"></i></div>
-          </div>
-        </div>
-
-        <!-- Recent Actions & Devices Summary -->
-        <div style="display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 10px;">
-          <div class="content-card">
-            <div class="content-card-header">
-              <h3 class="card-title"><i class="fa-solid fa-clock-rotate-left" style="color: var(--primary);"></i> آخر
-                العمليات الإدارية المسجلة</h3>
-              <button class="btn btn-secondary btn-sm" onclick="switchTab('audit')">عرض كل السجل</button>
-            </div>
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>المنفذ</th>
-                    <th>الإجراء</th>
-                    <th>الهدف</th>
-                    <th>التفاصيل</th>
-                    <th>الوقت</th>
-                  </tr>
-                </thead>
-                <tbody id="overviewRecentLogs">
-                  <tr>
-                    <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 24px;">جاري تحميل
-                      العمليات الأخيرة...</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ================= Tab 2: Users & Devices Management ================= -->
-      <section id="tabDevices" class="tab-pane hidden">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-tv" style="color: var(--primary);"></i> إدارة أجهزة المشتركين</h2>
-            <p>عرض وبحث وإدارة جميع الأجهزة المسجلة وتعيين الحالات وقوائم التشغيل</p>
-          </div>
-          <button class="btn btn-primary" id="btnOpenCreateDeviceModal">
-            <i class="fa-solid fa-plus-circle"></i>
-            <span>إضافة جهاز جديد</span>
-          </button>
-        </div>
-
-        <!-- Filter Bar -->
-        <div class="filter-bar">
-          <div class="filter-group">
-            <div class="search-input-box">
-              <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="deviceSearchInput" class="form-input"
-                placeholder="بحث بعنوان MAC أو الاسم أو المنصة...">
-            </div>
-            <select id="deviceStatusFilter" class="form-input" style="min-width: 130px; width: auto;">
-              <option value="">جميع الحالات</option>
-              <option value="active">نشط فقط</option>
-              <option value="disabled">معطل / موقوف</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <button class="btn btn-secondary btn-sm" id="btnRefreshDevices">
-              <i class="fa-solid fa-rotate"></i>
-              <span>تحديث</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Devices Table -->
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>اسم الجهاز</th>
-                <th>كود MAC</th>
-                <th>الحالة</th>
-                <th>القوائم المرتبطة</th>
-                <th>المنصة</th>
-                <th>آخر اتصال</th>
-                <th>تاريخ الإضافة</th>
-                <th style="text-align: center;">الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody id="devicesTableBody">
-              <tr>
-                <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 30px;">جاري تحميل الأجهزة...
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Pagination Bar -->
-        <div class="pagination-bar" id="devicesPagination">
-          <span id="devicesPaginationText">عرض 0 من 0 جهاز</span>
-          <div class="pagination-controls" id="devicesPaginationControls"></div>
-        </div>
-      </section>
-
-      <!-- ================= Tab 3: Playlists Management (All Devices) ================= -->
-      <section id="tabPlaylists" class="tab-pane hidden">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i> إدارة جميع قوائم التشغيل</h2>
-            <p>استعراض، فحص وتعديل جميع اشتراكات M3U و Xtream Codes المرتبطة بجميع الأجهزة</p>
-          </div>
-          <button class="btn btn-primary" id="btnOpenAddPlaylistModal">
-            <i class="fa-solid fa-plus-circle"></i>
-            <span>إضافة قائمة تشغيل</span>
-          </button>
-        </div>
-
-        <!-- Filter Bar -->
-        <div class="filter-bar">
-          <div class="filter-group">
-            <div class="search-input-box">
-              <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="playlistSearchInput" class="form-input"
-                placeholder="بحث باسم القائمة، الرابط، أو الجهاز...">
-            </div>
-            <select id="playlistTypeFilter" class="form-input" style="min-width: 120px; width: auto;">
-              <option value="all">جميع الأنواع</option>
-              <option value="m3u">M3U / M3U8</option>
-              <option value="xtream">Xtream Codes</option>
-            </select>
-            <select id="playlistStatusFilter" class="form-input" style="min-width: 130px; width: auto;">
-              <option value="all">جميع الحالات</option>
-              <option value="enabled">مفعلة فقط</option>
-              <option value="disabled">معطلة فقط</option>
-              <option value="working">تعمل بنجاح</option>
-              <option value="connection_failed">فشل الاتصال</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <button class="btn btn-secondary btn-sm" id="btnRefreshPlaylists">
-              <i class="fa-solid fa-rotate"></i>
-              <span>تحديث</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Playlists Table -->
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>اسم القائمة</th>
-                <th>الجهاز المرتبط</th>
-                <th>النوع</th>
-                <th>رابط السيرفر (محمي)</th>
-                <th>الحالة التشغيلية</th>
-                <th>الحالة</th>
-                <th>آخر فحص</th>
-                <th style="text-align: center;">الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody id="allPlaylistsTableBody">
-              <tr>
-                <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 30px;">جاري تحميل قوائم
-                  التشغيل...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Pagination Bar -->
-        <div class="pagination-bar" id="playlistsPagination">
-          <span id="playlistsPaginationText">عرض 0 من 0 قائمة</span>
-          <div class="pagination-controls" id="playlistsPaginationControls"></div>
-        </div>
-      </section>
-
-      <!-- ================= Tab 4: Device Activity ================= -->
-      <section id="tabActivity" class="tab-pane hidden">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-wave-square" style="color: var(--primary);"></i> نشاط وتواجد الأجهزة</h2>
-            <p>متابعة الاتصال اللحظي وإصدارات التطبيق للأجهزة المسجلة</p>
-          </div>
-          <button class="btn btn-secondary btn-sm" id="btnRefreshActivity">
-            <i class="fa-solid fa-rotate"></i>
-            <span>تحديث النشاط</span>
-          </button>
-        </div>
-
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>الجهاز</th>
-                <th>عنوان MAC</th>
-                <th>إصدار التطبيق</th>
-                <th>المنصة</th>
-                <th>إصدار المزامنة</th>
-                <th>حالة الجهاز</th>
-                <th>آخر ظهور مسجل</th>
-              </tr>
-            </thead>
-            <tbody id="activityTableBody">
-              <tr>
-                <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 30px;">جاري تحميل النشاط...
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ================= Tab 5: Synchronization ================= -->
-      <section id="tabSync" class="tab-pane hidden">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-rotate" style="color: var(--primary);"></i> إدارة المزامنة</h2>
-            <p>متابعة إصدارات المزامنة وإرسال طلبات التحديث الفوري لأجهزة المشتركين</p>
-          </div>
-          <button class="btn btn-secondary btn-sm" id="btnRefreshSync">
-            <i class="fa-solid fa-rotate"></i>
-            <span>تحديث الحالة</span>
-          </button>
-        </div>
-
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>الجهاز</th>
-                <th>عنوان MAC</th>
-                <th>إصدار المزامنة الحالي</th>
-                <th>عدد القوائم</th>
-                <th>حالة الجهاز</th>
-                <th>آخر تحديث</th>
-                <th style="text-align: center;">إجراء المزامنة</th>
-              </tr>
-            </thead>
-            <tbody id="syncTableBody">
-              <tr>
-                <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 30px;">جاري تحميل بيانات
-                  المزامنة...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ================= Tab 6: Audit Logs ================= -->
-      <section id="tabAudit" class="tab-pane hidden">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-shield-halved" style="color: var(--primary);"></i> سجل العمليات الإدارية (Audit
-              Trail)</h2>
-            <p>سجل أمني غير قابل للتعديل لكافة العمليات المنفذة في النظام لحماية البيانات</p>
-          </div>
-          <button class="btn btn-secondary btn-sm" id="btnRefreshAudit">
-            <i class="fa-solid fa-rotate"></i>
-            <span>تحديث السجل</span>
-          </button>
-        </div>
-
-        <div class="filter-bar">
-          <div class="search-input-box">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="auditSearchInput" class="form-input" placeholder="بحث في السجل...">
-          </div>
-        </div>
-
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>المنفذ</th>
-                <th>الإجراء</th>
-                <th>الهدف</th>
-                <th>التفاصيل المقتطعة</th>
-                <th>التاريخ والوقت</th>
-              </tr>
-            </thead>
-            <tbody id="auditTableBody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 30px;">جاري تحميل سجل
-                  العمليات...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="pagination-bar" id="auditPagination">
-          <span id="auditPaginationText">عرض 0 من 0 سجل</span>
-          <div class="pagination-controls" id="auditPaginationControls"></div>
-        </div>
-      </section>
-
-      <!-- ================= Tab 7: Security Settings ================= -->
-      <section id="tabSecurity" class="tab-pane hidden">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2><i class="fa-solid fa-user-lock" style="color: var(--primary);"></i> إعدادات الأمان والمشرفين</h2>
-            <p>إدارة الحسابات الإدارية المعتمدة وتغيير كلمة المرور وتأمين النظام</p>
-          </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
-          <!-- Active Admin Accounts Status -->
-          <div class="content-card">
-            <h3 class="card-title" style="margin-bottom: 14px;"><i class="fa-solid fa-id-badge"
-                style="color: var(--primary);"></i> الحسابات الإدارية المعتمدة</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
-              التحكم في الموقع مقتصر حصراً على الحسابين الإداريين المعتمدين وفق متطلبات الأمان.
-            </p>
-            <div id="adminSlotsContainer" style="display: flex; flex-direction: column; gap: 12px;">
-              <!-- Slot 1 & Slot 2 cards injected here -->
-            </div>
-          </div>
-
-          <!-- Change Current Admin Password -->
-          <div class="content-card">
-            <h3 class="card-title" style="margin-bottom: 14px;"><i class="fa-solid fa-key"
-                style="color: var(--warning);"></i> تغيير كلمة المرور للمشرف النشط</h3>
-
-            <div id="changePasswordAlert" class="alert-box hidden"></div>
-
-            <form id="changePasswordForm">
-              <div class="form-group">
-                <label class="form-label" for="curPassword">كلمة المرور الحالية</label>
-                <input type="password" id="curPassword" class="form-input" required autocomplete="current-password">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="newPassword">كلمة المرور الجديدة (8 أحرف على الأقل)</label>
-                <input type="password" id="newPassword" class="form-input" required minlength="8"
-                  autocomplete="new-password">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="confirmPassword">تأكيد كلمة المرور الجديدة</label>
-                <input type="password" id="confirmPassword" class="form-input" required minlength="8"
-                  autocomplete="new-password">
-              </div>
-
-              <button type="submit" id="btnChangePasswordSubmit" class="btn btn-primary"
-                style="width: 100%; margin-top: 10px;">
-                <i class="fa-solid fa-floppy-disk"></i>
-                <span>حفظ كلمة المرور الجديدة</span>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="adminDeviceSearchInput" class="form-input" placeholder="Search by name or MAC..." style="width: 240px; padding: 7px 12px; font-size: 0.85rem;">
+              <select id="adminDeviceStatusFilter" class="form-select" style="width: 130px; padding: 7px 12px; font-size: 0.85rem;">
+                <option value="">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="blocked">Blocked</option>
+              </select>
+              <button type="button" id="btnAdminRefreshDevices" class="btn btn-secondary btn-sm" title="Refresh devices">
+                <i class="fa-solid fa-rotate-right"></i>
               </button>
-            </form>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Device Name</th>
+                  <th>MAC Address</th>
+                  <th>Platform</th>
+                  <th>Status</th>
+                  <th>Sync Ver</th>
+                  <th>Registered</th>
+                  <th>Last Seen</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="adminDevicesTableBody">
+                <tr>
+                  <td colspan="8" class="empty-state">
+                    <i class="fa-solid fa-tv"></i>
+                    <p>Loading devices...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-      </section>
-
-    </main>
-  </div>
-
-  <!-- ================= Modal 1: Create New Device ================= -->
-  <div id="createDeviceModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 520px;">
-      <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-plus-circle" style="color: var(--primary);"></i>
-          <span>إضافة وتسجيل جهاز جديد</span>
-        </h3>
-        <button class="modal-close-btn" onclick="closeCreateDeviceModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
       </div>
 
-      <div id="createDeviceAlert" class="alert-box hidden"></div>
-
-      <form id="createDeviceForm">
-        <div class="form-group">
-          <label class="form-label" for="newDeviceMac">كود الجهاز (MAC Address)</label>
-          <input type="text" id="newDeviceMac" class="form-input code-style" placeholder="AA:BB:CC:11:22:33"
-            maxlength="17" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="newDeviceLabel">اسم أو تسمية الجهاز</label>
-          <input type="text" id="newDeviceLabel" class="form-input" placeholder="مثال: جهاز الصالون 4K" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="newDevicePlatform">نوع المنصة / الجهاز</label>
-          <select id="newDevicePlatform" class="form-input">
-            <option value="Android TV">Android TV / TV Box</option>
-            <option value="Mobile Phone">Mobile Phone (هاتف محمول)</option>
-            <option value="Tablet">Tablet (تابلت)</option>
-          </select>
-        </div>
-
-        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-          <button type="button" class="btn btn-secondary" onclick="closeCreateDeviceModal()">إلغاء</button>
-          <button type="submit" id="btnCreateDeviceSubmit" class="btn btn-primary">
-            <i class="fa-solid fa-save"></i>
-            <span>تسجيل الجهاز وتوليد PIN</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- ================= Modal 2: Add Playlist / Source ================= -->
-  <div id="addSourceModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 620px;">
-      <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-plus-circle" style="color: var(--primary);"></i>
-          <span>إضافة قائمة تشغيل جديدة</span>
-        </h3>
-        <button class="modal-close-btn" onclick="closeAddSourceModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-
-      <div id="addSourceAlert" class="alert-box hidden"></div>
-
-      <form id="addSourceForm">
-        <!-- Target Device Selector -->
-        <div class="form-group">
-          <label class="form-label" for="addSourceDeviceId">الجهاز المستهدف</label>
-          <select id="addSourceDeviceId" class="form-input" required>
-            <option value="">جاري تحميل الأجهزة...</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="addSourceName">اسم القائمة أو الباقة</label>
-          <input type="text" id="addSourceName" class="form-input" placeholder="مثال: باقة القنوات العربية والأفلام VIP"
-            required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="addSourceType">نوع المصدر</label>
-          <select id="addSourceType" class="form-input" onchange="handleAddSourceTypeChange()">
-            <option value="m3u">رابط قائمة مباشر (M3U / M3U8)</option>
-            <option value="xtream">خادم Xtream Codes API</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="addSourceUrl">رابط السيرفر أو القائمة (URL)</label>
-          <input type="url" id="addSourceUrl" class="form-input latin-code"
-            placeholder="http://example.com:8080 أو رابط m3u" required>
-        </div>
-
-        <div id="addXtreamFields" class="hidden"
-          style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+      <!-- ==============================================================
+           TAB 2: PLAYLIST MANAGEMENT (Specification Section 3.5 & 5)
+           Critical: Playlists belong to account, not device!
+           ============================================================== -->
+      <div id="tabPlaylists" class="tab-pane">
+        <!-- Integrity Safeguard Notice -->
+        <div class="alert-box alert-info mb-4">
+          <i class="fa-solid fa-shield-halved" style="font-size: 1.2rem;"></i>
           <div>
-            <label class="form-label" for="addSourceUser">اسم المستخدم (Xtream)</label>
-            <input type="text" id="addSourceUser" class="form-input latin-code" placeholder="Username">
-          </div>
-          <div>
-            <label class="form-label" for="addSourcePass">كلمة المرور (Xtream)</label>
-            <input type="password" id="addSourcePass" class="form-input latin-code" placeholder="Password">
+            <strong>Account-Level Playlist Ownership:</strong> Playlists belong to your administrator account. Pairing, unpairing, blocking, or resetting player devices will never delete or alter your playlists.
           </div>
         </div>
 
-        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-          <button type="button" class="btn btn-secondary" onclick="closeAddSourceModal()">إلغاء</button>
-          <button type="submit" id="btnAddSourceSubmit" class="btn btn-primary">
-            <i class="fa-solid fa-cloud-arrow-up"></i>
-            <span>حفظ وإضافة القائمة للجهاز</span>
-          </button>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">
+                <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
+                <span>Playlists</span>
+                <span id="playlistsCountBadge" class="badge badge-dim">0</span>
+              </h2>
+              <p class="form-hint">Manage M3U streams and Xtream Codes configurations.</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <input type="text" id="playlistSearchInput" class="form-input" placeholder="Search playlists..." style="width: 200px; padding: 7px 12px; font-size: 0.85rem;">
+              <select id="playlistTypeFilter" class="form-select" style="width: 120px; padding: 7px 12px; font-size: 0.85rem;">
+                <option value="">All Types</option>
+                <option value="m3u">M3U</option>
+                <option value="xtream">Xtream</option>
+              </select>
+              <select id="playlistStatusFilter" class="form-select" style="width: 120px; padding: 7px 12px; font-size: 0.85rem;">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="expired">Expired</option>
+              </select>
+              <button type="button" id="btnOpenAddPlaylist" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Playlist</span>
+              </button>
+              <button type="button" id="btnRefreshPlaylists" class="btn btn-secondary btn-sm" title="Refresh playlists">
+                <i class="fa-solid fa-rotate-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Playlist Name</th>
+                  <th>Type</th>
+                  <th>Server / Stream URL</th>
+                  <th>Expiration Date</th>
+                  <th>Connectivity</th>
+                  <th>Enabled</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="playlistsTableBody">
+                <tr>
+                  <td colspan="7" class="empty-state">
+                    <i class="fa-solid fa-satellite-dish"></i>
+                    <p>Loading playlists...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </form>
+      </div>
+
+      <!-- ==============================================================
+           TAB 3: ACCOUNT & ACCESS MANAGEMENT (Specification Section 2 & 3.5)
+           Strict two-account owner policy, no public registration
+           ============================================================== -->
+      <div id="tabAccounts" class="tab-pane">
+        <!-- System Policy Card -->
+        <div class="card mb-4">
+          <div class="card-header">
+            <h2 class="card-title">
+              <i class="fa-solid fa-users-gear" style="color: var(--primary);"></i>
+              <span>Authorized Administrator Accounts</span>
+            </h2>
+            <span class="badge badge-info">Strict 2-Account Policy</span>
+          </div>
+          <p style="margin-bottom: 20px;">The system enforces exactly two authorized owner accounts. Public registration is permanently disabled. Secrets and password hashes are never exposed in the interface.</p>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            <!-- Slot 1 Card -->
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <i class="fa-solid fa-user-shield" style="color: var(--primary);"></i>
+                  <strong>Account Slot 1</strong>
+                </div>
+                <span id="slot1StatusBadge" class="badge badge-success">Configured</span>
+              </div>
+              <div style="font-size: 0.9rem; margin-bottom: 6px;">
+                <span style="color: var(--text-dim);">Username:</span> <strong id="slot1UsernameText">Drexx0301</strong>
+              </div>
+              <div style="font-size: 0.82rem; color: var(--text-dim);">
+                Role: Primary Administrator • PBKDF2 Encrypted
+              </div>
+            </div>
+
+            <!-- Slot 2 Card -->
+            <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 20px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <i class="fa-solid fa-user-shield" style="color: var(--accent-purple);"></i>
+                  <strong>Account Slot 2</strong>
+                </div>
+                <span id="slot2StatusBadge" class="badge badge-success">Configured</span>
+              </div>
+              <div style="font-size: 0.9rem; margin-bottom: 6px;">
+                <span style="color: var(--text-dim);">Username:</span> <strong id="slot2UsernameText">Saddam1991</strong>
+              </div>
+              <div style="font-size: 0.82rem; color: var(--text-dim);">
+                Role: Secondary Administrator • PBKDF2 Encrypted
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Update Active Account Password -->
+        <div class="card" style="max-width: 600px;">
+          <div class="card-header">
+            <h3 class="card-title">
+              <i class="fa-solid fa-key" style="color: var(--primary);"></i>
+              <span>Update Your Account Password</span>
+            </h3>
+          </div>
+
+          <div id="accountUpdateAlert" class="alert-box alert-danger hidden"></div>
+
+          <form id="updateAccountForm" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="currentPasswordInput">Current Password <span class="required">*</span></label>
+              <input type="password" id="currentPasswordInput" class="form-input" placeholder="Enter current password" autocomplete="current-password" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="newUsernameInput">Username</label>
+              <input type="text" id="newUsernameInput" class="form-input" placeholder="Keep current username or enter new" autocomplete="username">
+              <span class="form-hint">Leave blank to keep your current username.</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="newPasswordInput">New Password <span class="required">*</span></label>
+              <input type="password" id="newPasswordInput" class="form-input" placeholder="Enter new password (min 8 chars)" autocomplete="new-password" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="confirmPasswordInput">Confirm New Password <span class="required">*</span></label>
+              <input type="password" id="confirmPasswordInput" class="form-input" placeholder="Re-enter new password" autocomplete="new-password" required>
+            </div>
+
+            <button type="submit" id="btnUpdateAccountSubmit" class="btn btn-primary">
+              <i class="fa-solid fa-check"></i>
+              <span>Save Changes</span>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- ==============================================================
+           TAB 4: AUDIT ACTIVITY LOGS (Specification Section 3.5 & 6)
+           ============================================================== -->
+      <div id="tabAudit" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">
+                <i class="fa-solid fa-clock-rotate-left" style="color: var(--primary);"></i>
+                <span>Audit Activity Logs</span>
+                <span id="auditCountBadge" class="badge badge-dim">0</span>
+              </h2>
+              <p class="form-hint">Immutable security events for device pairing, key resets, status changes, and playlist updates.</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <input type="text" id="auditSearchInput" class="form-input" placeholder="Filter audit events..." style="width: 240px; padding: 7px 12px; font-size: 0.85rem;">
+              <button type="button" id="btnRefreshAudit" class="btn btn-secondary btn-sm" title="Refresh audit logs">
+                <i class="fa-solid fa-rotate-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Actor</th>
+                  <th>Event</th>
+                  <th>Target Type</th>
+                  <th>Target</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <tr>
+                  <td colspan="6" class="empty-state">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <p>Loading audit logs...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
-  </div>
+  </main>
 
-  <!-- ================= Modal 3: Edit Playlist / Source ================= -->
-  <div id="editSourceModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 620px;">
+  <!-- ================= Footer ================= -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>SADDAM IPTV Administration Dashboard &copy; 2026. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <!-- ================= MODAL: Add / Edit Playlist ================= -->
+  <div id="playlistModal" class="modal-overlay">
+    <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i>
-          <span>تعديل قائمة التشغيل</span>
+        <h3 class="modal-title" id="playlistModalTitle">
+          <i class="fa-solid fa-satellite-dish" style="color: var(--primary);"></i>
+          <span>Add Playlist</span>
         </h3>
-        <button class="modal-close-btn" onclick="closeEditSourceModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <button type="button" class="modal-close-btn" id="btnClosePlaylistModal">&times;</button>
       </div>
+      <div class="modal-body">
+        <div id="playlistModalAlert" class="alert-box alert-danger hidden"></div>
 
-      <div id="editSourceAlert" class="alert-box hidden"></div>
+        <form id="playlistForm" novalidate>
+          <input type="hidden" id="playlistEditId" value="">
 
-      <form id="editSourceForm">
-        <input type="hidden" id="editSourceId">
-
-        <div class="form-group">
-          <label class="form-label" for="editSourceName">اسم القائمة أو الباقة</label>
-          <input type="text" id="editSourceName" class="form-input" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="editSourceType">نوع المصدر</label>
-          <select id="editSourceType" class="form-input" onchange="handleEditSourceTypeChange()">
-            <option value="m3u">رابط قائمة مباشر (M3U / M3U8)</option>
-            <option value="xtream">خادم Xtream Codes API</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="editSourceUrl">رابط السيرفر أو القائمة (URL)</label>
-          <input type="url" id="editSourceUrl" class="form-input latin-code" required>
-        </div>
-
-        <div id="editXtreamFields" class="hidden"
-          style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
-          <div>
-            <label class="form-label" for="editSourceUser">اسم المستخدم (Xtream)</label>
-            <input type="text" id="editSourceUser" class="form-input latin-code">
+          <div class="form-group">
+            <label class="form-label" for="playlistTypeSelect">Source Type <span class="required">*</span></label>
+            <select id="playlistTypeSelect" class="form-select">
+              <option value="m3u">M3U Playlist URL</option>
+              <option value="xtream">Xtream Codes API</option>
+            </select>
           </div>
-          <div>
-            <label class="form-label" for="editSourcePass">كلمة المرور (Xtream)</label>
-            <input type="password" id="editSourcePass" class="form-input latin-code"
-              placeholder="اترك فارغاً للإبقاء على الحالية">
+
+          <div class="form-group">
+            <label class="form-label" for="playlistNameInput">Playlist Name <span class="required">*</span></label>
+            <input type="text" id="playlistNameInput" class="form-input" placeholder="e.g. VIP Channels, Sports Live" required>
           </div>
-        </div>
 
-        <div class="form-group" style="margin-top: 12px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #fff; font-size: 0.9rem;">
-            <input type="checkbox" id="editSourceEnabled"
-              style="width: 18px; height: 18px; accent-color: var(--primary);">
-            <span>تفعيل هذه القائمة على الجهاز (متاحة للمشترك)</span>
-          </label>
-        </div>
+          <!-- M3U Fields -->
+          <div id="groupM3uFields">
+            <div class="form-group">
+              <label class="form-label" for="playlistM3uUrlInput">M3U Stream URL <span class="required">*</span></label>
+              <input type="url" id="playlistM3uUrlInput" class="form-input code-font" placeholder="http://provider.example.com/get.php?username=...&password=...">
+            </div>
+          </div>
 
-        <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-          <button type="button" class="btn btn-secondary" onclick="closeEditSourceModal()">إلغاء</button>
-          <button type="submit" id="btnEditSourceSubmit" class="btn btn-primary">
-            <i class="fa-solid fa-floppy-disk"></i>
-            <span>حفظ التعديلات</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+          <!-- Xtream Fields -->
+          <div id="groupXtreamFields" class="hidden">
+            <div class="form-group">
+              <label class="form-label" for="playlistServerUrlInput">Server URL <span class="required">*</span></label>
+              <input type="text" id="playlistServerUrlInput" class="form-input code-font" placeholder="http://provider.example.com:8080">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="playlistUsernameInput">Username</label>
+              <input type="text" id="playlistUsernameInput" class="form-input" placeholder="Xtream username">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="playlistPasswordInput">Password</label>
+              <input type="password" id="playlistPasswordInput" class="form-input" placeholder="Xtream password">
+            </div>
+          </div>
 
-  <!-- ================= Modal 4: Device Full Details & Playlists ================= -->
-  <div id="deviceDetailsModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 760px;">
-      <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-tv" style="color: var(--primary);"></i>
-          <span>تفاصيل الجهاز وقوائم التشغيل المرتبطة</span>
-        </h3>
-        <button class="modal-close-btn" onclick="closeDeviceDetailsModal()">
-          <i class="fa-solid fa-xmark"></i>
+          <div class="form-group">
+            <label class="form-label" for="playlistExpiresAtInput">Expiration Date</label>
+            <input type="date" id="playlistExpiresAtInput" class="form-input">
+            <span class="form-hint">Optional expiration date. Expired playlists are marked but never deleted automatically.</span>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnTestPlaylistConnectivity" class="btn btn-secondary">
+          <i class="fa-solid fa-vial"></i>
+          <span>Test Connectivity</span>
         </button>
-      </div>
-
-      <div id="deviceDetailsContent">
-        <!-- Injected dynamically -->
+        <button type="button" id="btnCancelPlaylist" class="btn btn-outline">Cancel</button>
+        <button type="button" id="btnSavePlaylist" class="btn btn-primary">Save Playlist</button>
       </div>
     </div>
   </div>
 
-  <!-- ================= Modal 5: Edit Device Label ================= -->
-  <div id="editDeviceModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 480px;">
+  <!-- ================= MODAL: Delete Playlist Confirmation ================= -->
+  <div id="deletePlaylistModal" class="modal-overlay">
+    <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="card-title">
-          <i class="fa-solid fa-pen" style="color: var(--primary);"></i>
-          <span>تعديل تسمية الجهاز</span>
+        <h3 class="modal-title" style="color: var(--danger); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Confirm Playlist Deletion</span>
         </h3>
-        <button class="modal-close-btn" onclick="closeEditDeviceModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <button type="button" class="modal-close-btn" id="btnCloseDeletePlaylistModal">&times;</button>
       </div>
-
-      <form id="editDeviceForm">
-        <input type="hidden" id="editDeviceId">
-        <div class="form-group">
-          <label class="form-label" for="editDeviceLabelInput">اسم الجهاز أو التسمية</label>
-          <input type="text" id="editDeviceLabelInput" class="form-input" required>
+      <div class="modal-body">
+        <p style="margin-bottom: 14px;">Are you sure you want to delete the playlist <strong id="deleteTargetPlaylistName">-</strong>?</p>
+        <div class="alert-box alert-danger">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>This action cannot be undone. All players using this playlist will no longer be able to load its streams.</span>
         </div>
-
-        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px;">
-          <button type="button" class="btn btn-secondary" onclick="closeEditDeviceModal()">إلغاء</button>
-          <button type="submit" class="btn btn-primary">حفظ</button>
-        </div>
-      </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelDeletePlaylist" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnConfirmDeletePlaylist" class="btn btn-danger">Delete Playlist</button>
+      </div>
     </div>
   </div>
 
-  <!-- ================= Modal 6: View / Rotate PIN ================= -->
-  <div id="viewPinModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 440px; text-align: center;">
+  <!-- ================= MODAL: Reset Key Confirmation & Result ================= -->
+  <div id="adminResetKeyModal" class="modal-overlay">
+    <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="card-title" style="margin: 0 auto;">
+        <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
           <i class="fa-solid fa-key" style="color: var(--warning);"></i>
-          <span>مفتاح الجهاز (Device Key / PIN)</span>
+          <span id="adminResetKeyTitle">Reset Device KEY</span>
         </h3>
-        <button class="modal-close-btn" onclick="closeViewPinModal()">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <button type="button" class="modal-close-btn" id="btnCloseAdminResetModal">&times;</button>
       </div>
+      <div class="modal-body">
+        <div id="adminResetConfirmView">
+          <p style="margin-bottom: 14px;">Reset the Device KEY for <strong id="adminResetTargetName">-</strong> (<span id="adminResetTargetMac" class="code-font"></span>)?</p>
+          <div class="alert-box alert-warning">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>This will revoke all active sessions for this device and generate a new 6-digit Device KEY.</span>
+          </div>
+        </div>
 
-      <div style="padding: 16px 0;">
-        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px;">كود PIN الخاص بربط هذا الجهاز في
-          تطبيق SADDAM IPTV</p>
-        <div id="pinDisplayBox" class="code-box"
-          style="font-size: 2rem; letter-spacing: 4px; padding: 14px; margin: 16px 0; background: var(--bg-card); border-radius: var(--border-radius-sm); border: 1px solid var(--border-focus); color: var(--primary); font-family: var(--font-code);">
-          ------</div>
-
-        <div style="display: flex; gap: 10px; justify-content: center; margin-top: 14px;">
-          <button class="btn btn-secondary" id="btnCopyPinModal" title="نسخ الكود">
-            <i class="fa-regular fa-copy"></i>
-            <span>نسخ الكود</span>
-          </button>
-          <button class="btn btn-warning" id="btnRotatePinAction" title="توليد كود PIN جديد">
-            <i class="fa-solid fa-rotate"></i>
-            <span>تدوير / تغيير PIN</span>
-          </button>
+        <div id="adminResetResultView" class="hidden">
+          <div class="alert-box alert-success">
+            <i class="fa-solid fa-circle-check"></i>
+            <span>Device KEY reset successfully.</span>
+          </div>
+          <div class="key-display-card">
+            <div class="key-display-title">New Device KEY</div>
+            <div id="adminModalNewKey" class="key-display-digits">------</div>
+            <button type="button" id="btnCopyAdminNewKey" class="btn btn-secondary btn-sm">
+              <i class="fa-regular fa-copy"></i>
+              <span id="btnCopyAdminNewKeyText">Copy Device KEY</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- ================= Modal 7: Confirmation Modal ================= -->
-  <div id="confirmModal" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 440px; text-align: center;">
-      <div
-        style="width: 56px; height: 56px; border-radius: 50%; background: var(--danger-bg); border: 1px solid rgba(239, 68, 68, 0.4); color: var(--danger); font-size: 1.6rem; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px;">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-      </div>
-      <h3 id="confirmModalTitle" style="margin-bottom: 8px; font-size: 1.2rem;">تأكيد الإجراء</h3>
-      <p id="confirmModalMessage"
-        style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; line-height: 1.5;"></p>
-
-      <div style="display: flex; gap: 10px; justify-content: center;">
-        <button type="button" class="btn btn-secondary" onclick="closeConfirmModal()">إلغاء</button>
-        <button type="button" class="btn btn-danger" id="btnConfirmModalAction">تأكيد وتنفيذ</button>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelAdminReset" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnConfirmAdminReset" class="btn btn-primary">Confirm Reset</button>
+        <button type="button" id="btnDoneAdminReset" class="btn btn-primary hidden">Done</button>
       </div>
     </div>
   </div>
 
+  <!-- ================= MODAL: Unpair Device Confirmation ================= -->
+  <div id="adminUnpairModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" style="color: var(--danger); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Confirm Unpair Device</span>
+        </h3>
+        <button type="button" class="modal-close-btn" id="btnCloseAdminUnpairModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 14px;">Are you sure you want to unpair <strong id="adminUnpairTargetName">-</strong> (<span id="adminUnpairTargetMac" class="code-font"></span>)?</p>
+        <div class="alert-box alert-info">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span><strong>Playlists are preserved:</strong> Playlists belong to your account and will NOT be deleted or altered by unpairing this device.</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelAdminUnpair" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btnConfirmAdminUnpair" class="btn btn-danger">Unpair Device</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Administration Logic -->
   <script src="admin.js"></script>
 </body>
-
 </html>

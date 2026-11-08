@@ -115,12 +115,24 @@ def generate_device_pin() -> str:
     return f"{num:06d}"
 
 
+import re
+
+def validate_mac_format(mac: str) -> bool:
+    """Validates 6-octet hexadecimal MAC address format (colon, hyphen, or continuous)."""
+    if not mac:
+        return False
+    clean = mac.strip()
+    return bool(re.match(r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$", clean) or re.match(r"^[0-9A-Fa-f]{12}$", clean))
+
+
 def normalize_mac(mac: str) -> str:
-    """Normalizes MAC / Device code by stripping spaces, uppercasing."""
+    """Normalizes MAC / Device code to uppercase colon-separated format (00:1A:79:AB:CD:EF)."""
     if not mac:
         return ""
-    clean = mac.strip().upper()
-    return clean
+    clean = re.sub(r"[^0-9A-Fa-f]", "", mac.strip()).upper()
+    if len(clean) == 12:
+        return ":".join(clean[i:i+2] for i in range(0, 12, 2))
+    return mac.strip().upper()
 
 
 def mask_mac(mac: str) -> str:
@@ -175,27 +187,27 @@ def is_ssrf_safe_url(url_string: str) -> Tuple[bool, str]:
     try:
         parsed = urllib.parse.urlparse(url_string)
         if parsed.scheme.lower() not in ("http", "https"):
-            return False, "يجب أن يبدأ الرابط بـ http أو https"
+            return False, "URL must begin with http:// or https://"
 
         hostname = parsed.hostname
         if not hostname:
-            return False, "عنوان الخادم غير صالح"
+            return False, "Invalid server URL hostname"
 
         # Check for forbidden hostnames
         forbidden_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal"}
         if hostname.lower() in forbidden_hosts:
-            return False, "لا يمكن الاتصال بالعناوين المحلية أو المحمية (SSRF Protection)"
+            return False, "Access to localhost or internal cloud metadata addresses is prohibited (SSRF Protection)"
 
         # Resolve IP to check if it's in a private or reserved range
         try:
             ip_str = socket.gethostbyname(hostname)
             ip = ipaddress.ip_address(ip_str)
             if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-                return False, "لا يمكن الاتصال بعناوين الشبكات الخاصة أو المحلية"
+                return False, "Access to private or local network IP addresses is prohibited (SSRF Protection)"
         except socket.gaierror:
             # If DNS fails at this stage, we can let it fail during actual probe or warn
             pass
 
-        return True, "الرابط آمن ومطابق للمواصفات"
+        return True, "URL is safe and compliant with security rules"
     except Exception as e:
-        return False, f"خطأ في التحقق من أمان الرابط: {str(e)}"
+        return False, f"Error validating URL security: {str(e)}"
