@@ -12,7 +12,7 @@
 
   <title>SADDAM IPTV - Device Playlists</title>
   <meta name="description" content="Manage streaming sources and playlists for your SADDAM IPTV player device.">
-  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="icon" type="image/png" href="/logo.png">
 
   <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,15 +23,15 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
   <!-- Design System -->
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 
   <!-- ================= Header ================= -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="device_playlists.html" class="brand-link">
-        <img src="logo.png" alt="SADDAM IPTV" class="brand-logo-img">
+      <a href="/device/playlists" class="brand-link">
+        <img src="/logo.png" alt="SADDAM IPTV" class="brand-logo-img">
         <div class="brand-title">
           <span>SADDAM</span>
           <span class="gradient-text">IPTV</span>
@@ -311,10 +311,10 @@
           if (macElem) macElem.textContent = `(${data.device.mac})`;
           loadDevicePlaylists();
         } else {
-          window.location.href = 'device_login.html';
+          window.location.href = '/device/login';
         }
       } catch (err) {
-        window.location.href = 'device_login.html';
+        window.location.href = '/device/login';
       }
     }
 
@@ -326,7 +326,7 @@
           try {
             await fetch('/api/device/auth/logout', { method: 'POST', credentials: 'same-origin' });
           } catch (e) {}
-          window.location.href = 'device_login.html';
+          window.location.href = '/device/login';
         });
       }
 

@@ -1713,15 +1713,16 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         target_dir = base_dir
 
-        if path in ("/", ""):
+        clean_path = path.split("?")[0].rstrip("/")
+        if clean_path in ("/", "", "/index.html"):
             file_name = "index.html"
-        elif path in ("/admin", "/admin/", "/admin/devices"):
+        elif clean_path in ("/admin", "/admin/devices", "/admin.html"):
             file_name = "admin.html"
-        elif path in ("/device/login", "/device/login/", "/device-login"):
+        elif clean_path in ("/device", "/device/login", "/device-login", "/device_login.html"):
             file_name = "device_login.html"
-        elif path in ("/device/playlists", "/device/playlists/", "/device-playlists"):
+        elif clean_path in ("/device/playlists", "/device-playlists", "/device_playlists.html"):
             file_name = "device_playlists.html"
-        elif path in ("/login", "/login/", "/staff/login"):
+        elif clean_path in ("/login", "/staff/login"):
             file_name = "index.html"
         else:
             file_name = path.lstrip("/")
@@ -1739,12 +1740,20 @@ class SaddamIPTVHandler(http.server.BaseHTTPRequestHandler):
 
         file_path = os.path.abspath(os.path.join(target_dir, file_name))
         if not os.path.isfile(file_path):
-            file_path = None
+            # Check if file exists by its basename in target_dir (e.g. /device/styles.css -> styles.css)
+            base_file_path = os.path.abspath(os.path.join(target_dir, os.path.basename(file_name)))
+            if os.path.isfile(base_file_path):
+                file_path = base_file_path
+            else:
+                file_path = None
 
         if not file_path and not path.startswith("/api"):
-            fallback = os.path.abspath(os.path.join(target_dir, "index.html"))
-            if os.path.isfile(fallback):
-                file_path = fallback
+            _, req_ext = os.path.splitext(clean_name)
+            # Only fallback to index.html for extensionless virtual page routes
+            if not req_ext:
+                fallback = os.path.abspath(os.path.join(target_dir, "index.html"))
+                if os.path.isfile(fallback):
+                    file_path = fallback
 
         if not file_path or not os.path.isfile(file_path):
             self.send_response(404)

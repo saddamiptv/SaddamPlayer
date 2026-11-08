@@ -12,7 +12,7 @@
 
   <title>SADDAM IPTV - Device Login</title>
   <meta name="description" content="Device access portal for SADDAM IPTV players using MAC Address and Device Key.">
-  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="icon" type="image/png" href="/logo.png">
 
   <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,15 +23,15 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
   <!-- Design System -->
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 
   <!-- ================= Header ================= -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="device_login.html" class="brand-link">
-        <img src="logo.png" alt="SADDAM IPTV" class="brand-logo-img">
+      <a href="/device/login" class="brand-link">
+        <img src="/logo.png" alt="SADDAM IPTV" class="brand-logo-img">
         <div class="brand-title">
           <span>SADDAM</span>
           <span class="gradient-text">IPTV</span>
@@ -41,7 +41,7 @@
 
       <div class="header-actions">
         <!-- Switch to Staff Portal -->
-        <a href="index.html" class="btn btn-secondary btn-sm" title="Go to Administrator Login">
+        <a href="/login" class="btn btn-secondary btn-sm" title="Go to Administrator Login">
           <i class="fa-solid fa-user-shield"></i>
           <span>Staff Login</span>
         </a>
@@ -55,7 +55,7 @@
       <section class="auth-wrapper">
         <div class="auth-card">
           <div class="auth-header">
-            <img src="logo.png" alt="SADDAM IPTV" class="auth-logo">
+            <img src="/logo.png" alt="SADDAM IPTV" class="auth-logo">
             <h1 class="auth-title">Device <span class="gradient-text">Login</span></h1>
             <p class="auth-subtitle">Enter your player's MAC Address and 6-digit Device Key to access your playlists.</p>
           </div>
@@ -100,7 +100,7 @@
               Need a Device Key? Ask staff to register your device.
             </p>
             <p style="font-size: 0.78rem;">
-              <a href="index.html" style="color: var(--text-muted); text-decoration: none;">Staff Member? Administrator Sign In &rarr;</a>
+              <a href="/login" style="color: var(--text-muted); text-decoration: none;">Staff Member? Administrator Sign In &rarr;</a>
             </p>
           </div>
         </div>
@@ -173,7 +173,7 @@
         });
         const data = await res.json();
         if (res.ok && data.success && data.device) {
-          window.location.href = 'device_playlists.html';
+          window.location.href = '/device/playlists';
         }
       } catch (e) {}
     }
@@ -217,7 +217,7 @@
         const data = await res.json();
 
         if (res.ok && data.success) {
-          window.location.href = data.redirect || 'device_playlists.html';
+          window.location.href = data.redirect || '/device/playlists';
         } else {
           showAlert(alertBox, data.error || 'Invalid MAC Address or Device Key');
         }
